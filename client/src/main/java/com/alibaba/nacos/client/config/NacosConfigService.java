@@ -74,7 +74,7 @@ public class NacosConfigService implements ConfigService {
     private final ConfigFilterChainManager configFilterChainManager;
     
     public NacosConfigService(Properties properties) throws NacosException {
-        PreInitUtils.asyncPreLoadCostComponent();
+        PreInitUtils.asyncPreLoadCostComponent(); // 异步预加载耗时组件
         final NacosClientProperties clientProperties = NacosClientProperties.PROTOTYPE.derive(properties);
         ValidatorUtils.checkInitParam(clientProperties);
         
@@ -171,6 +171,12 @@ public class NacosConfigService implements ConfigService {
         // but is maintained by user.
         // This is designed for certain scenario like client emergency reboot,
         // changing config needed in the same time, while nacos server is down.
+        // 如果存在，我们首先尝试使用本地故障转移内容。
+        // 用于故障转移的配置内容不是由客户机程序自动创建的，而是由用户维护的。
+        // 这是为某些场景而设计的，比如客户端紧急重新启动，同时需要更改配置，而nacos服务器关闭。
+        // 有用户手动创建的配置文件以防止服务端异常时，能正常获取到配置
+
+        // 1.从故障转移文件中获取配置内容
         String content = LocalConfigInfoProcessor.getFailover(worker.getAgentName(), dataId, group, tenant);
         if (content != null) {
             LOGGER.warn("[{}] [get-config] get failover ok, dataId={}, group={}, tenant={}, config={}",
@@ -183,7 +189,8 @@ public class NacosConfigService implements ConfigService {
             content = cr.getContent();
             return content;
         }
-        
+
+        // 2.用户没有配置故障转移文件时，则从服务端拉去配置
         try {
             ConfigResponse response = worker.getServerConfig(dataId, group, tenant, timeoutMs, false);
             cr.setContent(response.getContent());
@@ -200,6 +207,7 @@ public class NacosConfigService implements ConfigService {
                     worker.getAgentName(), dataId, group, tenant, ioe.toString());
         }
 
+        // 3.从服务段拉去配置时，则从本地缓存中获取
         content = LocalConfigInfoProcessor.getSnapshot(worker.getAgentName(), dataId, group, tenant);
         if (content != null) {
             LOGGER.warn("[{}] [get-config] get snapshot ok, dataId={}, group={}, tenant={}, config={}",

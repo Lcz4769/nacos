@@ -376,6 +376,7 @@ public class ServerListManager implements Closeable {
         public void run() {
             /*
              get serverlist from nameserver
+             从名称服务器获取服务器列表
              */
             try {
                 updateIfChanged(getApacheServerList(url, name));
