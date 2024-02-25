@@ -24,6 +24,8 @@ import org.springframework.context.ConfigurableApplicationContext;
 
 /**
  * Configuration about datasource.
+ * 数据源配置
+ * ApplicationContextInitializer是Spring框架原有的概念, 这个类的主要目的就是在ConfigurableApplicationContext类型（或者子类型）的ApplicationContext做refresh之前，允许我们对ConfigurableApplicationContext的实例做进一步的设置或者处理
  *
  * @author xiweng.yy
  */
@@ -57,6 +59,7 @@ public class DatasourceConfiguration implements ApplicationContextInitializer<Co
     
     private void loadDatasourceConfiguration() {
         // External data sources are used by default in cluster mode
+        // 默认情况下，在集群模式下使用外部数据源
         String platform = DatasourcePlatformUtil.getDatasourcePlatform("");
         boolean useExternalStorage =
                 !PersistenceConstant.EMPTY_DATASOURCE_PLATFORM.equalsIgnoreCase(platform) && !PersistenceConstant.DERBY

@@ -23,6 +23,7 @@ import org.springframework.core.type.AnnotatedTypeMetadata;
 
 /**
  * Judge whether to user EmbeddedStorage by condition.
+ * 通过条件判断是否使用嵌入式存储
  *
  * @author <a href="mailto:liaochuntao@live.com">liaochuntao</a>
  */

@@ -429,6 +429,9 @@ public class CacheData {
                                     notifyWarnTimeout, Thread.currentThread()), notifyWarnTimeout,
                             TimeUnit.MILLISECONDS);
                     listenerWrap.inNotifying = true;
+                    // 此处是配置热更新的关键调用
+                    // 具体调用：starter-config包中NacosContextRefresher实现了listener接口，
+                    // 执行receiveConfigInfo方法后实现类会发布RefreshEvent事件，是相关Bean被销毁，再被使用时会使用新的配置创建Bean实例，以此实现配置热更新
                     listener.receiveConfigInfo(contentTmp);
                     // compare lastContent and content
                     if (listener instanceof AbstractConfigChangeListener) {
