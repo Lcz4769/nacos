@@ -750,10 +750,12 @@ public class ClientWorker implements Closeable {
             executor.schedule(() -> {
                 while (!executor.isShutdown() && !executor.isTerminated()) {
                     try {
+                        // 如果不能立即取出，则等待5s再执行（listenExecutebell设计巧妙，使得任务不按固定周期执行）
                         listenExecutebell.poll(5L, TimeUnit.SECONDS);
                         if (executor.isShutdown() || executor.isTerminated()) {
                             continue;
                         }
+                        // 配置监听
                         executeConfigListen();
                     } catch (Throwable e) {
                         LOGGER.error("[rpc listen execute] [rpc listen] exception", e);
@@ -789,7 +791,8 @@ public class ClientWorker implements Closeable {
             for (CacheData cache : cacheMap.get().values()) {
                 
                 synchronized (cache) {
-                    
+
+                    // 检查本地配置
                     checkLocalConfig(cache);
                     
                     // check local listeners consistent.
@@ -847,9 +850,11 @@ public class ClientWorker implements Closeable {
             final String envName = cacheData.envName;
             
             // Check if a failover file exists for the specified dataId, group, and tenant.
+            // 检查指定的dataId、组和租户是否存在故障转移文件。
             File file = LocalConfigInfoProcessor.getFailoverFile(envName, dataId, group, tenant);
             
             // If not using local config info and a failover file exists, load and use it.
+            // 如果不使用本地配置信息，并且存在故障转移文件，则加载并使用它。
             if (!cacheData.isUseLocalConfigInfo() && file.exists()) {
                 String content = LocalConfigInfoProcessor.getFailover(envName, dataId, group, tenant);
                 final String md5 = MD5Utils.md5Hex(content, Constants.ENCODE);
@@ -863,6 +868,7 @@ public class ClientWorker implements Closeable {
             }
             
             // If use local config info, but the failover file is deleted, switch back to server config.
+            // 如果使用本地配置信息，但故障转移文件被删除，则切换回服务器配置。
             if (cacheData.isUseLocalConfigInfo() && !file.exists()) {
                 cacheData.setUseLocalConfigInfo(false);
                 LOGGER.warn("[{}] [failover-change] failover file deleted. dataId={}, group={}, tenant={}", envName,
@@ -871,6 +877,7 @@ public class ClientWorker implements Closeable {
             }
             
             // When the failover file content changes, indicating a change in local configuration.
+            // 当故障转移文件内容发生变化时，表示本地配置发生了变化。
             if (cacheData.isUseLocalConfigInfo() && file.exists()
                     && cacheData.getLocalConfigInfoVersion() != file.lastModified()) {
                 String content = LocalConfigInfoProcessor.getFailover(envName, dataId, group, tenant);

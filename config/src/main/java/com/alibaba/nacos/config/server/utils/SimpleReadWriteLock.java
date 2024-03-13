@@ -26,6 +26,7 @@ public class SimpleReadWriteLock {
     /**
      * Zero means no lock; Negative Numbers mean write locks; Positive Numbers mean read locks, and the numeric value
      * represents the number of read locks.
+     * 零表示无锁;负数表示写锁;正数表示读锁，数值表示读锁的数量。
      */
     private int status = 0;
     

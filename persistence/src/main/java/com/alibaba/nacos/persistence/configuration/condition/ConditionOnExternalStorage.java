@@ -23,6 +23,7 @@ import org.springframework.core.type.AnnotatedTypeMetadata;
 
 /**
  * Judge whether to user ExternalStorage by condition.
+ * 通过条件判断是否使用外部存储
  *
  * @author <a href="mailto:liaochuntao@live.com">liaochuntao</a>
  */
