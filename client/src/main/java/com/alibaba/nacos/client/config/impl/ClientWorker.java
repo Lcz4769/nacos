@@ -59,10 +59,10 @@ import com.alibaba.nacos.common.remote.ConnectionType;
 import com.alibaba.nacos.common.remote.client.Connection;
 import com.alibaba.nacos.common.remote.client.ConnectionEventListener;
 import com.alibaba.nacos.common.remote.client.RpcClient;
+import com.alibaba.nacos.common.remote.client.RpcClientConfigFactory;
 import com.alibaba.nacos.common.remote.client.RpcClientFactory;
-import com.alibaba.nacos.common.remote.client.RpcClientTlsConfig;
-import com.alibaba.nacos.common.remote.client.RpcClientTlsConfigFactory;
 import com.alibaba.nacos.common.remote.client.ServerListFactory;
+import com.alibaba.nacos.common.remote.client.grpc.GrpcClientConfig;
 import com.alibaba.nacos.common.utils.ConnLabelsUtils;
 import com.alibaba.nacos.common.utils.ConvertUtils;
 import com.alibaba.nacos.common.utils.JacksonUtils;
@@ -150,6 +150,8 @@ public class ClientWorker implements Closeable {
     private static final int MIN_THREAD_NUM = 2;
     
     private static final int THREAD_MULTIPLE = 1;
+    
+    private boolean enableClientMetrics = true;
     
     /**
      * index(taskId)-> total cache count for this taskId.
@@ -298,7 +300,13 @@ public class ClientWorker implements Closeable {
         }
         LOGGER.info("[{}] [unsubscribe] {}", agent.getName(), groupKey);
         
-        MetricsMonitor.getListenConfigCountMonitor().set(cacheMap.get().size());
+        if (enableClientMetrics) {
+            try {
+                MetricsMonitor.getListenConfigCountMonitor().set(cacheMap.get().size());
+            } catch (Throwable t) {
+                LOGGER.error("Failed to update metrics for listen config count", t);
+            }
+        }
     }
     
     /**
@@ -373,7 +381,13 @@ public class ClientWorker implements Closeable {
         
         LOGGER.info("[{}] [subscribe] {}", this.agent.getName(), key);
         
-        MetricsMonitor.getListenConfigCountMonitor().set(cacheMap.get().size());
+        if (enableClientMetrics) {
+            try {
+                MetricsMonitor.getListenConfigCountMonitor().set(cacheMap.get().size());
+            } catch (Throwable t) {
+                LOGGER.error("Failed to update metrics for listen config count", t);
+            }
+        }
         
         return cache;
     }
@@ -420,7 +434,13 @@ public class ClientWorker implements Closeable {
         }
         LOGGER.info("[{}] [subscribe] {}", agent.getName(), key);
         
-        MetricsMonitor.getListenConfigCountMonitor().set(cacheMap.get().size());
+        if (enableClientMetrics) {
+            try {
+                MetricsMonitor.getListenConfigCountMonitor().set(cacheMap.get().size());
+            } catch (Throwable t) {
+                LOGGER.error("Failed to update metrics for listen config count", t);
+            }
+        }
         
         return cache;
     }
@@ -523,6 +543,8 @@ public class ClientWorker implements Closeable {
         
         this.enableRemoteSyncConfig = Boolean.parseBoolean(
                 properties.getProperty(PropertyKeyConst.ENABLE_REMOTE_SYNC_CONFIG));
+        this.enableClientMetrics = Boolean.parseBoolean(
+                properties.getProperty(PropertyKeyConst.ENABLE_CLIENT_METRICS, "true"));
         initAppLabels(properties.getProperties(SourceType.PROPERTIES));
     }
     
@@ -1100,10 +1122,9 @@ public class ClientWorker implements Closeable {
                 Map<String, String> labels = getLabels();
                 Map<String, String> newLabels = new HashMap<>(labels);
                 newLabels.put("taskId", taskId);
-                RpcClientTlsConfig clientTlsConfig = RpcClientTlsConfigFactory.getInstance()
-                        .createSdkConfig(properties);
-                RpcClient rpcClient = RpcClientFactory.createClient(uuid + "_config-" + taskId, getConnectionType(),
-                        newLabels, clientTlsConfig);
+                GrpcClientConfig grpcClientConfig = RpcClientConfigFactory.getInstance()
+                        .createGrpcClientConfig(properties, newLabels);
+                RpcClient rpcClient = RpcClientFactory.createClient(uuid + "_config-" + taskId, getConnectionType(), grpcClientConfig);
                 if (rpcClient.isWaitInitiated()) {
                     initRpcClientHandler(rpcClient);
                     rpcClient.setTenant(getTenant());
