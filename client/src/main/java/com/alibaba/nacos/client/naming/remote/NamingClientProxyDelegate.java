@@ -25,8 +25,9 @@ import com.alibaba.nacos.api.naming.pojo.ServiceInfo;
 import com.alibaba.nacos.api.naming.utils.NamingUtils;
 import com.alibaba.nacos.api.selector.AbstractSelector;
 import com.alibaba.nacos.client.env.NacosClientProperties;
+import com.alibaba.nacos.client.naming.cache.NamingFuzzyWatchServiceListHolder;
 import com.alibaba.nacos.client.naming.cache.ServiceInfoHolder;
-import com.alibaba.nacos.client.naming.core.ServerListManager;
+import com.alibaba.nacos.client.naming.core.NamingServerListManager;
 import com.alibaba.nacos.client.naming.core.ServiceInfoUpdateService;
 import com.alibaba.nacos.client.naming.event.InstancesChangeNotifier;
 import com.alibaba.nacos.client.naming.remote.gprc.NamingGrpcClientProxy;
@@ -53,7 +54,7 @@ import static com.alibaba.nacos.client.utils.LogUtils.NAMING_LOGGER;
  */
 public class NamingClientProxyDelegate implements NamingClientProxy {
     
-    private final ServerListManager serverListManager;
+    private final NamingServerListManager serverListManager;
     
     private final ServiceInfoUpdateService serviceInfoUpdateService;
     
@@ -68,17 +69,19 @@ public class NamingClientProxyDelegate implements NamingClientProxy {
     private ScheduledExecutorService executorService;
     
     public NamingClientProxyDelegate(String namespace, ServiceInfoHolder serviceInfoHolder,
-            NacosClientProperties properties, InstancesChangeNotifier changeNotifier) throws NacosException {
+            NacosClientProperties properties, InstancesChangeNotifier changeNotifier,
+            NamingFuzzyWatchServiceListHolder namingFuzzyWatchServiceListHolder) throws NacosException {
         this.serviceInfoUpdateService = new ServiceInfoUpdateService(properties, serviceInfoHolder, this,
                 changeNotifier);
-        this.serverListManager = new ServerListManager(properties, namespace);
+        this.serverListManager = new NamingServerListManager(properties, namespace);
+        this.serverListManager.start();
         this.serviceInfoHolder = serviceInfoHolder;
-        this.securityProxy = new SecurityProxy(this.serverListManager.getServerList(),
+        this.securityProxy = new SecurityProxy(this.serverListManager,
                 NamingHttpClientManager.getInstance().getNacosRestTemplate());
         initSecurityProxy(properties);
         this.httpClientProxy = new NamingHttpClientProxy(namespace, securityProxy, serverListManager, properties);
         this.grpcClientProxy = new NamingGrpcClientProxy(namespace, securityProxy, serverListManager, properties,
-                serviceInfoHolder);
+                serviceInfoHolder, namingFuzzyWatchServiceListHolder);
     }
     
     private void initSecurityProxy(NacosClientProperties properties) {
@@ -192,7 +195,8 @@ public class NamingClientProxyDelegate implements NamingClientProxy {
     }
     
     private NamingClientProxy getExecuteClientProxy(Instance instance) {
-        if (instance.isEphemeral() || grpcClientProxy.isAbilitySupportedByServer(AbilityKey.SERVER_SUPPORT_PERSISTENT_INSTANCE_BY_GRPC)) {
+        if (instance.isEphemeral() || grpcClientProxy.isAbilitySupportedByServer(
+                AbilityKey.SERVER_PERSISTENT_INSTANCE_BY_GRPC)) {
             return grpcClientProxy;
         }
         return httpClientProxy;

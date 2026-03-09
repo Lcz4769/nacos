@@ -40,7 +40,7 @@ class DumpProcessorUserRwaDiskTest extends DumpProcessorTest {
     }
     
     @AfterEach
-    public void after() {
+    public void after() throws Exception {
         super.after();
     }
     
@@ -48,15 +48,5 @@ class DumpProcessorUserRwaDiskTest extends DumpProcessorTest {
     public void testDumpNormalAndRemove() throws IOException {
         super.testDumpNormalAndRemove();
         
-    }
-    
-    @Test
-    public void testDumpBetaAndRemove() throws IOException {
-        super.testDumpBetaAndRemove();
-    }
-    
-    @Test
-    public void testDumpTagAndRemove() throws IOException {
-        super.testDumpTagAndRemove();
     }
 }

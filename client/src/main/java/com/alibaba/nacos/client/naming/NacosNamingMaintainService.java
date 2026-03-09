@@ -26,7 +26,7 @@ import com.alibaba.nacos.api.selector.AbstractSelector;
 import com.alibaba.nacos.api.selector.ExpressionSelector;
 import com.alibaba.nacos.api.selector.NoneSelector;
 import com.alibaba.nacos.client.env.NacosClientProperties;
-import com.alibaba.nacos.client.naming.core.ServerListManager;
+import com.alibaba.nacos.client.naming.core.NamingServerListManager;
 import com.alibaba.nacos.client.naming.remote.http.NamingHttpClientManager;
 import com.alibaba.nacos.client.naming.remote.http.NamingHttpClientProxy;
 import com.alibaba.nacos.client.naming.utils.InitUtils;
@@ -49,15 +49,16 @@ import static com.alibaba.nacos.client.utils.LogUtils.NAMING_LOGGER;
  *
  * @author liaochuntao
  * @since 1.0.1
+ * @deprecated Use {@link com.alibaba.nacos.api.naming.maintain.NamingMaintainService} in nacos-maintainer-client article tp replaced.
  */
-@SuppressWarnings("PMD.ServiceOrDaoClassShouldEndWithImplRule")
+@Deprecated
 public class NacosNamingMaintainService implements NamingMaintainService {
     
     private String namespace;
     
     private NamingHttpClientProxy serverProxy;
     
-    private ServerListManager serverListManager;
+    private NamingServerListManager serverListManager;
     
     private SecurityProxy securityProxy;
     
@@ -79,8 +80,9 @@ public class NacosNamingMaintainService implements NamingMaintainService {
         namespace = InitUtils.initNamespaceForNaming(nacosClientProperties);
         InitUtils.initSerialization();
         InitUtils.initWebRootContext(nacosClientProperties);
-        serverListManager = new ServerListManager(nacosClientProperties, namespace);
-        securityProxy = new SecurityProxy(serverListManager.getServerList(),
+        serverListManager = new NamingServerListManager(nacosClientProperties, namespace);
+        serverListManager.start();
+        securityProxy = new SecurityProxy(serverListManager,
                 NamingHttpClientManager.getInstance().getNacosRestTemplate());
         initSecurityProxy(properties);
         serverProxy = new NamingHttpClientProxy(namespace, securityProxy, serverListManager, nacosClientProperties);

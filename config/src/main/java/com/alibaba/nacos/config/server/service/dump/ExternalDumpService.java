@@ -16,15 +16,13 @@
 
 package com.alibaba.nacos.config.server.service.dump;
 
-import com.alibaba.nacos.config.server.service.merge.MergeDatumService;
-import com.alibaba.nacos.core.namespace.repository.NamespacePersistService;
-import com.alibaba.nacos.persistence.configuration.condition.ConditionOnExternalStorage;
-import com.alibaba.nacos.config.server.service.repository.ConfigInfoAggrPersistService;
-import com.alibaba.nacos.config.server.service.repository.ConfigInfoBetaPersistService;
+import com.alibaba.nacos.config.server.service.ConfigMigrateService;
+import com.alibaba.nacos.config.server.service.repository.ConfigInfoGrayPersistService;
 import com.alibaba.nacos.config.server.service.repository.ConfigInfoPersistService;
-import com.alibaba.nacos.config.server.service.repository.ConfigInfoTagPersistService;
 import com.alibaba.nacos.config.server.service.repository.HistoryConfigInfoPersistService;
 import com.alibaba.nacos.core.cluster.ServerMemberManager;
+import com.alibaba.nacos.core.namespace.repository.NamespacePersistService;
+import com.alibaba.nacos.persistence.configuration.condition.ConditionOnExternalStorage;
 import org.springframework.context.annotation.Conditional;
 import org.springframework.context.annotation.DependsOn;
 import org.springframework.stereotype.Component;
@@ -38,7 +36,7 @@ import javax.annotation.PostConstruct;
  */
 @Conditional(ConditionOnExternalStorage.class)
 @Component
-@DependsOn({"rpcConfigChangeNotifier"})
+@DependsOn({"rpcConfigChangeNotifier", "configMigrateService"})
 public class ExternalDumpService extends DumpService {
     
     /**
@@ -50,13 +48,11 @@ public class ExternalDumpService extends DumpService {
     public ExternalDumpService(ConfigInfoPersistService configInfoPersistService,
             NamespacePersistService namespacePersistService,
             HistoryConfigInfoPersistService historyConfigInfoPersistService,
-            ConfigInfoAggrPersistService configInfoAggrPersistService,
-            ConfigInfoBetaPersistService configInfoBetaPersistService,
-            ConfigInfoTagPersistService configInfoTagPersistService, MergeDatumService mergeDatumService,
-            ServerMemberManager memberManager) {
+            ConfigInfoGrayPersistService configInfoGrayPersistService,
+            ServerMemberManager memberManager,
+            ConfigMigrateService configMigrateService) {
         super(configInfoPersistService, namespacePersistService, historyConfigInfoPersistService,
-                configInfoAggrPersistService, configInfoBetaPersistService, configInfoTagPersistService,
-                mergeDatumService, memberManager);
+                configInfoGrayPersistService, memberManager, configMigrateService);
     }
     
     @PostConstruct

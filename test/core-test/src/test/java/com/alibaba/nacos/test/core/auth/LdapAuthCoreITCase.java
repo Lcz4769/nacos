@@ -17,7 +17,7 @@
 package com.alibaba.nacos.test.core.auth;
 
 import com.alibaba.nacos.Nacos;
-import com.alibaba.nacos.auth.config.AuthConfigs;
+import com.alibaba.nacos.plugin.auth.impl.configuration.AuthConfigs;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -26,13 +26,22 @@ import org.junit.platform.suite.api.Suite;
 import org.mockito.Mockito;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.boot.web.server.LocalServerPort;
+import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.ldap.core.LdapTemplate;
 import org.springframework.test.annotation.DirtiesContext;
 
 import java.net.URL;
 import java.util.concurrent.TimeUnit;
 
+/**
+ * Integration test for LDAP authentication in Nacos core module.
+ *
+ * <p>This test verifies LDAP-based login behavior against an external LDAP server.
+ * It depends on LDAP configuration and environment availability.
+ *
+ * <p>Note: This is an integration test and may be skipped in environments
+ * where LDAP service is not available.
+ */
 @SuppressWarnings("checkstyle:AbbreviationAsWordInName")
 @Suite
 @SelectClasses({LdapAuthCoreITCase.NonTlsTest.class, LdapAuthCoreITCase.TlsTest.class})

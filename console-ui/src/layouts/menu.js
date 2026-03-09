@@ -46,6 +46,33 @@ const configurationMenu = {
     },
   ],
 };
+
+export const McpServerManagementRoute = '/mcpServerManagement';
+
+// AI Registry 菜单，包含 MCP Registry、Agent Registry、Skill Registry、Prompt Registry
+const aiRegistryMenu = {
+  key: 'aiRegistry',
+  badge: 'new',
+  children: [
+    {
+      key: 'mcpRegistry',
+      url: McpServerManagementRoute,
+    },
+    {
+      key: 'agentRegistry',
+      url: '/agentManagement',
+    },
+    {
+      key: 'skillRegistry',
+      url: '/skillManagement',
+    },
+    {
+      key: 'promptRegistry',
+      url: '/promptManagement',
+    },
+  ],
+};
+
 /**
  * 权限控制相关
  */
@@ -83,6 +110,25 @@ const settingMenu = {
   key: 'settingCenter',
   url: '/settingCenter',
 };
+
+const pluginMenu = {
+  key: 'pluginManagement',
+  badge: 'new',
+  url: '/pluginManagement',
+};
+
+const agentManagementMenu = {
+  key: 'agentManagement',
+  badge: 'new',
+  url: '/agentManagement',
+  children: [
+    {
+      key: 'agentList',
+      url: '/agentManagement',
+    },
+  ],
+};
+
 export default function(model) {
   const { token = '{}' } = localStorage;
   const { globalAdmin } = isJsonString(token) ? JSON.parse(token) || {} : {};
@@ -93,6 +139,8 @@ export default function(model) {
     result.push(configurationMenu);
   } else {
     result.push(configurationMenu, serviceDiscoveryMenu);
+    result.push(aiRegistryMenu);
+    result.push(pluginMenu);
   }
   if (globalAdmin) {
     result.push(authorityControlMenu);
@@ -100,5 +148,5 @@ export default function(model) {
   result.push(namespaceMenu);
   result.push(clusterMenu);
   result.push(settingMenu);
-  return result.filter(item => item);
+  return result;
 }

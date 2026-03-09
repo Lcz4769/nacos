@@ -16,6 +16,9 @@
 
 package com.alibaba.nacos.config.server.service;
 
+import com.alibaba.nacos.auth.config.NacosAuthConfig;
+import com.alibaba.nacos.auth.config.NacosAuthConfigHolder;
+import com.alibaba.nacos.auth.util.AuthHeaderUtil;
 import com.alibaba.nacos.common.constant.HttpHeaderConsts;
 import com.alibaba.nacos.common.http.param.Header;
 import com.alibaba.nacos.common.http.param.Query;
@@ -28,6 +31,7 @@ import com.alibaba.nacos.config.server.model.SampleResult;
 import com.alibaba.nacos.config.server.service.notify.HttpClientManager;
 import com.alibaba.nacos.config.server.utils.ConfigExecutor;
 import com.alibaba.nacos.config.server.utils.LogUtil;
+import com.alibaba.nacos.core.auth.NacosServerAuthConfig;
 import com.alibaba.nacos.core.cluster.Member;
 import com.alibaba.nacos.core.cluster.ServerMemberManager;
 import com.alibaba.nacos.sys.env.EnvUtil;
@@ -58,11 +62,11 @@ import static com.alibaba.nacos.common.constant.RequestUrlConstants.HTTP_PREFIX;
  * @author Nacos
  */
 @Service
+@Deprecated
 public class ConfigSubService {
     
     private ServerMemberManager memberManager;
     
-    @SuppressWarnings("PMD.ThreadPoolCreationRule")
     public ConfigSubService(ServerMemberManager memberManager) {
         this.memberManager = memberManager;
     }
@@ -108,22 +112,6 @@ public class ConfigSubService {
         }
     }
     
-    private List<ListenerCheckResult> runHasCheckListenerCollectionJob(Map<String, String> params,
-            CompletionService<ListenerCheckResult> completionService) {
-        return new ClusterCheckHasListenerJob(params, completionService, memberManager).runJobs();
-    }
-    
-    class ClusterCheckHasListenerJob extends ClusterJob<ListenerCheckResult> {
-        
-        static final String URL = Constants.COMMUNICATION_CONTROLLER_PATH + "/checkConfigWatchers";
-        
-        ClusterCheckHasListenerJob(Map<String, String> params, CompletionService<ListenerCheckResult> completionService,
-                ServerMemberManager serverMemberManager) {
-            super(URL, params, completionService, serverMemberManager);
-        }
-    }
-    
-    @SuppressWarnings("PMD.AbstractClassShouldStartWithAbstractNamingRule")
     abstract static class ClusterJob<T> {
         
         private String url;
@@ -160,12 +148,13 @@ public class ConfigSubService {
         List<T> runJobs() {
             Collection<Member> ipList = serverMemberManager.allMembers();
             List<T> collectionResult = new ArrayList<>(ipList.size());
+            
             // Submit query task.
             for (Member ip : ipList) {
                 try {
                     completionService.submit(new Job<T>(ip.getAddress()) {
                     });
-                } catch (Exception e) { // Send request failed.
+                } catch (Throwable e) { // Send request failed.
                     LogUtil.DEFAULT_LOG.warn("invoke to {} with exception: {} during submit job", ip, e.getMessage());
                 }
             }
@@ -228,36 +217,6 @@ public class ConfigSubService {
             LogUtil.DEFAULT_LOG.warn("Get remote info from {} with exception: {}", ip, e.getMessage());
             return null;
         }
-    }
-    
-    public ListenerCheckResult getCheckHasListenerResult(String dataId, String group, String tenant, int sampleTime)
-            throws Exception {
-        Map<String, String> params = new HashMap<>(5);
-        params.put("dataId", dataId);
-        params.put("group", group);
-        if (!StringUtils.isBlank(tenant)) {
-            params.put("tenant", tenant);
-        }
-        int size = memberManager.getServerList().size();
-        BlockingQueue<Future<ListenerCheckResult>> queue = new LinkedBlockingDeque<>(
-                memberManager.getServerList().size());
-        CompletionService<ListenerCheckResult> completionService = new ExecutorCompletionService<>(
-                ConfigExecutor.getConfigSubServiceExecutor(), queue);
-        
-        ListenerCheckResult sampleCollectResult = new ListenerCheckResult();
-        sampleCollectResult.setCode(201);
-        for (int i = 0; i < sampleTime; i++) {
-            List<ListenerCheckResult> sampleResults = runHasCheckListenerCollectionJob(params, completionService);
-            if (sampleResults != null) {
-                sampleCollectResult = mergeListenerCheckResult(sampleCollectResult, sampleResults, size);
-            }
-            if (sampleCollectResult.isHasListener()) {
-                break;
-            }
-            
-        }
-        
-        return sampleCollectResult;
     }
     
     /**
@@ -358,6 +317,9 @@ public class ConfigSubService {
     public static RestResult<String> invokeUrl(String url, String encoding) throws Exception {
         Header header = Header.newInstance();
         header.addParam(HttpHeaderConsts.ACCEPT_CHARSET, encoding);
+        NacosAuthConfig authConfig = NacosAuthConfigHolder.getInstance()
+                .getNacosAuthConfigByScope(NacosServerAuthConfig.NACOS_SERVER_AUTH_SCOPE);
+        AuthHeaderUtil.addIdentityToHeader(header, authConfig);
         return HttpClientManager.getNacosRestTemplate().get(url, header, Query.EMPTY, String.class);
     }
 }

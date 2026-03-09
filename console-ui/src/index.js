@@ -52,6 +52,19 @@ import PermissionsManagement from './pages/AuthorityControl/PermissionsManagemen
 import RolesManagement from './pages/AuthorityControl/RolesManagement';
 import Welcome from './pages/Welcome/Welcome';
 import SettingCenter from './pages/SettingCenter';
+import McpManagement from './pages/AI/McpManagement/McpManagement';
+import McpDetail from './pages/AI/McpDetail';
+import AgentManagement from './pages/AI/AgentManagement';
+import NewAgent from './pages/AI/NewAgent';
+import AgentDetail from './pages/AI/AgentDetail';
+import PluginList from './pages/PluginManagement/PluginList';
+import SkillManagement from './pages/AI/SkillManagement';
+import NewSkill from './pages/AI/NewSkill';
+import SkillDetail from './pages/AI/SkillDetail';
+import PromptManagement from './pages/AI/PromptManagement';
+import NewPrompt from './pages/AI/NewPrompt';
+import PromptDetail from './pages/AI/PromptDetail';
+import PublishPromptVersion from './pages/AI/PublishPromptVersion';
 
 import reducers from './reducers';
 import { changeLanguage } from './reducers/locale';
@@ -61,6 +74,7 @@ import changeNameShow from './components/NameSpaceList/show';
 
 import './index.scss';
 import PropTypes from 'prop-types';
+import NewMcpServer from './pages/AI/NewMcpServer';
 
 module.hot && module.hot.accept();
 
@@ -99,6 +113,20 @@ const MENU = [
   { path: '/rolesManagement', component: RolesManagement },
   { path: '/permissionsManagement', component: PermissionsManagement },
   { path: '/settingCenter', component: SettingCenter },
+  { path: '/mcpServerManagement', component: McpManagement },
+  { path: '/mcpServerDetail', component: McpDetail },
+  { path: '/newMcpServer', component: NewMcpServer },
+  { path: '/agentManagement', component: AgentManagement },
+  { path: '/newAgent', component: NewAgent },
+  { path: '/agentDetail', component: AgentDetail },
+  { path: '/skillManagement', component: SkillManagement },
+  { path: '/newSkill', component: NewSkill },
+  { path: '/skillDetail', component: SkillDetail },
+  { path: '/promptManagement', component: PromptManagement },
+  { path: '/newPrompt', component: NewPrompt },
+  { path: '/promptDetail', component: PromptDetail },
+  { path: '/publishPromptVersion', component: PublishPromptVersion },
+  { path: '/pluginManagement', component: PluginList },
 ];
 
 @connect(state => ({ ...state.locale, ...state.base }), {

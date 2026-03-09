@@ -47,7 +47,7 @@ import org.slf4j.LoggerFactory;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Random;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -66,7 +66,6 @@ import static com.alibaba.nacos.api.exception.NacosException.SERVER_ERROR;
  * @author liuzunfei
  * @version $Id: RpcClient.java, v 0.1 2020年07月13日 9:15 PM liuzunfei Exp $
  */
-@SuppressWarnings("PMD.AbstractClassShouldStartWithAbstractNamingRule")
 public abstract class RpcClient implements Closeable {
     
     private static final Logger LOGGER = LoggerFactory.getLogger("com.alibaba.nacos.common.remote.client");
@@ -288,9 +287,9 @@ public abstract class RpcClient implements Closeable {
                                     break;
                                 }
                                 
-                                boolean statusFLowSuccess = RpcClient.this.rpcClientStatus
+                                boolean statusFlowSuccess = RpcClient.this.rpcClientStatus
                                         .compareAndSet(rpcClientStatus, RpcClientStatus.UNHEALTHY);
-                                if (statusFLowSuccess) {
+                                if (statusFlowSuccess) {
                                     reconnectContext = new ReconnectContext(null, false);
                                 } else {
                                     continue;
@@ -437,12 +436,11 @@ public abstract class RpcClient implements Closeable {
             return false;
         }
         int reTryTimes = rpcClientConfig.healthCheckRetryTimes();
-        Random random = new Random();
         while (reTryTimes >= 0) {
             reTryTimes--;
             try {
                 if (reTryTimes > 1) {
-                    Thread.sleep(random.nextInt(500));
+                    Thread.sleep(ThreadLocalRandom.current().nextInt(500));
                 }
                 Response response = this.currentConnection
                         .request(healthCheckRequest, rpcClientConfig.healthCheckTimeOut());
@@ -896,13 +894,12 @@ public abstract class RpcClient implements Closeable {
      * @param serverAddress address.
      * @return
      */
-    @SuppressWarnings("PMD.UndefineMagicConstantRule")
     private ServerInfo resolveServerInfo(String serverAddress) {
         Matcher matcher = EXCLUDE_PROTOCOL_PATTERN.matcher(serverAddress);
         if (matcher.find()) {
             serverAddress = matcher.group(1);
         }
-        String[] ipPortTuple = InternetAddressUtil.splitIPPortStr(serverAddress);
+        String[] ipPortTuple = InternetAddressUtil.splitIpPortStr(serverAddress);
         int defaultPort = Integer.parseInt(System.getProperty("nacos.server.port", "8848"));
         String serverPort = CollectionUtils.getOrDefault(ipPortTuple, 1, Integer.toString(defaultPort));
         

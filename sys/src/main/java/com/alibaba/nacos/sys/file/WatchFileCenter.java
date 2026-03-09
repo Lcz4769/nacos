@@ -154,7 +154,7 @@ public class WatchFileCenter {
         return false;
     }
     
-    private static class WatchDirJob extends Thread {
+    static class WatchDirJob extends Thread {
         
         private final ExecutorService callBackExecutor;
         
@@ -167,6 +167,8 @@ public class WatchFileCenter {
         private final Set<FileWatcher> watchers = new ConcurrentHashSet<>();
         
         public WatchDirJob(String paths) throws NacosException {
+            // in aot process all threads must be daemon threads
+            setDaemon(true);
             setName(paths);
             this.paths = paths;
             final Path p = Paths.get(paths);

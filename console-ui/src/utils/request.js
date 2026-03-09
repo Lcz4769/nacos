@@ -16,7 +16,7 @@
 
 import axios from 'axios';
 import qs from 'qs';
-import { Message } from '@alifd/next';
+import { toastError } from './message';
 import { browserHistory } from 'react-router';
 import { isPlainObject } from './nacosutil';
 // import { SUCCESS_RESULT_CODE } from '../constants';
@@ -40,7 +40,7 @@ const request = () => {
       if (!params) {
         config.params = {};
       }
-      if (!url.includes('auth/users/login') && localStorage.token) {
+      if (!url.includes('auth/user/login') && localStorage.token) {
         let token = {};
         try {
           token = JSON.parse(localStorage.token);
@@ -74,7 +74,7 @@ const request = () => {
       //   Message.error(resultMessage);
       //   return Promise.reject(new Error(resultMessage));
       // }
-      if (response.config && response.config.url === 'v1/console/server/state') {
+      if (response.config && response.config.url === 'v3/console/server/state') {
         const { auth_admin_request = '' } = response.data;
         if (auth_admin_request && auth_admin_request === 'true') {
           goRegister();
@@ -98,7 +98,7 @@ const request = () => {
         } else if (typeof data === 'object') {
           message = data.message;
         }
-        Message.error(message);
+        toastError(message);
 
         if (
           [401, 403].includes(status) &&
@@ -110,7 +110,7 @@ const request = () => {
         }
         return Promise.reject(error.response);
       }
-      Message.error(API_GENERAL_ERROR_MESSAGE);
+      toastError(API_GENERAL_ERROR_MESSAGE);
       return Promise.reject(error);
     }
   );

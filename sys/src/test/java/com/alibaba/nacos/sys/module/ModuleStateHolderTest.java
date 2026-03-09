@@ -16,6 +16,7 @@
 
 package com.alibaba.nacos.sys.module;
 
+import com.alibaba.nacos.sys.env.DeploymentType;
 import com.alibaba.nacos.sys.env.EnvUtil;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -39,6 +40,7 @@ class ModuleStateHolderTest {
     void setUp() throws Exception {
         environment = new MockEnvironment();
         EnvUtil.setEnvironment(environment);
+        EnvUtil.setDeploymentType(DeploymentType.MERGED);
         moduleStateMap = (Map<String, ModuleState>) ReflectionTestUtils.getField(ModuleStateHolder.getInstance(),
                 ModuleStateHolder.class, "moduleStates");
     }
@@ -54,7 +56,7 @@ class ModuleStateHolderTest {
     
     @Test
     void testGetAllModuleStates() {
-        assertEquals(2, ModuleStateHolder.getInstance().getAllModuleStates().size());
+        assertEquals(3, ModuleStateHolder.getInstance().getAllModuleStates().size());
     }
     
     @Test
@@ -67,6 +69,12 @@ class ModuleStateHolderTest {
     void testGetStateValueByNameWithoutModuleState() {
         assertEquals("", ModuleStateHolder.getInstance().getStateValueByName("non-exist", "test"));
         assertEquals("aaa", ModuleStateHolder.getInstance().getStateValueByName("non-exist", "test", "aaa"));
+    }
+    
+    @Test
+    void testGetStateValueByNameForRebuildState() {
+        int lastValue = ModuleStateHolder.getInstance().getStateValueByName("rebuild-mock", "re-test", 0);
+        assertEquals(lastValue + 1, ModuleStateHolder.getInstance().getStateValueByName("rebuild-mock", "re-test", 0));
     }
     
     @Test

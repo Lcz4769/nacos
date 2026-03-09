@@ -16,6 +16,7 @@
 
 package com.alibaba.nacos.plugin.auth.impl.constant;
 
+import com.alibaba.nacos.plugin.auth.constant.Constants;
 import com.alibaba.nacos.plugin.auth.impl.utils.PasswordEncoderUtil;
 
 /**
@@ -41,9 +42,17 @@ public class AuthConstants {
     
     public static final String PARAM_PASSWORD = "password";
     
-    public static final String CONSOLE_RESOURCE_NAME_PREFIX = "console/";
+    /**
+     * Console resource name prefix.
+     *
+     * @deprecated Use {@link Constants.Resource#CONSOLE_RESOURCE_NAME_PREFIX} instead.
+     */
+    @Deprecated
+    public static final String CONSOLE_RESOURCE_NAME_PREFIX = Constants.Resource.CONSOLE_RESOURCE_NAME_PREFIX;
     
     public static final String UPDATE_PASSWORD_ENTRY_POINT = CONSOLE_RESOURCE_NAME_PREFIX + "user/password";
+    
+    public static final String LOCK_OPERATOR_POINT = "grpc/lock";
     
     public static final String NACOS_USER_KEY = "nacosuser";
     
@@ -77,4 +86,18 @@ public class AuthConstants {
     public static final String LDAP_DEFAULT_ENCODED_PASSWORD = PasswordEncoderUtil.encode(System.getProperty("ldap.default.password", "nacos"));
     
     public static final String LDAP_PREFIX = "LDAP_";
+    
+    /**
+     * Maximum allowed password length.
+     */
+    public static final int MAX_PASSWORD_LENGTH = 72;
+    
+    /**
+     * Path for nacos plugin controller.
+     */
+    public static final String USER_PATH = "/v3/auth/user";
+    
+    public static final String ROLE_PATH = "/v3/auth/role";
+    
+    public static final String PERMISSION_PATH = "/v3/auth/permission";
 }

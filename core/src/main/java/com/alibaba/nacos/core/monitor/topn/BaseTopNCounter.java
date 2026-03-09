@@ -30,7 +30,6 @@ import java.util.concurrent.atomic.AtomicInteger;
  *
  * @author xiweng.yy
  */
-@SuppressWarnings("PMD.ClassNamingShouldBeCamelRule")
 public abstract class BaseTopNCounter<T> {
     
     private final Comparator<Pair<String, AtomicInteger>> comparator;
@@ -48,7 +47,7 @@ public abstract class BaseTopNCounter<T> {
      * @param topN topN
      * @return topN counter
      */
-    public List<Pair<String, AtomicInteger>> getTopNCounter(int topN) {
+    public List<Pair<String, AtomicInteger>> getCounterOfTopN(int topN) {
         if (!checkEnabled()) {
             reset();
             return Collections.emptyList();

@@ -29,6 +29,7 @@ import com.alibaba.nacos.common.remote.client.RpcClientFactory;
 import com.alibaba.nacos.core.cluster.Member;
 import com.alibaba.nacos.core.cluster.MembersChangeEvent;
 import com.alibaba.nacos.core.cluster.ServerMemberManager;
+import com.alibaba.nacos.plugin.auth.constant.Constants;
 import com.alibaba.nacos.sys.env.EnvUtil;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -48,9 +49,11 @@ import java.util.concurrent.Executor;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.Mockito.when;
+import static com.alibaba.nacos.api.exception.NacosException.CLIENT_INVALID_PARAM;
 
 /**
  * {@link ClusterRpcClientProxy} unit test.
@@ -59,7 +62,6 @@ import static org.mockito.Mockito.when;
  * @date 2021-07-08 13:22
  */
 @ExtendWith(MockitoExtension.class)
-// todo remove this
 @MockitoSettings(strictness = Strictness.LENIENT)
 class ClusterRpcClientProxyTest {
     
@@ -82,7 +84,10 @@ class ClusterRpcClientProxyTest {
     
     @BeforeEach
     void setUp() throws NacosException {
-        EnvUtil.setEnvironment(new MockEnvironment());
+        MockEnvironment environment = new MockEnvironment();
+        environment.setProperty(Constants.Auth.NACOS_CORE_AUTH_SYSTEM_TYPE, "nacos");
+        environment.setProperty(Constants.Auth.NACOS_CORE_AUTH_ADMIN_ENABLED, "false");
+        EnvUtil.setEnvironment(environment);
         member = new Member();
         member.setIp("1.1.1.1");
         ServerAbilities serverAbilities = new ServerAbilities();
@@ -159,6 +164,14 @@ class ClusterRpcClientProxyTest {
             fail(e.getMessage());
         }
     }
+
+    @Test
+    void testOnEventWithEmptyMembersTriggersMemberLeave() {
+        when(serverMemberManager.allMembersWithoutSelf()).thenReturn(Collections.emptyList());
+        clusterRpcClientProxy.onEvent(MembersChangeEvent.builder().build());
+        Map<String, RpcClient> clientMap = (Map<String, RpcClient>) ReflectionTestUtils.getField(RpcClientFactory.class, "CLIENT_MAP");
+        clientMap.put("Cluster-" + member.getAddress(), client);
+    }
     
     @Test
     void testIsRunningForClientConnected() {
@@ -177,4 +190,41 @@ class ClusterRpcClientProxyTest {
         member.setIp("11.11.11.11");
         assertFalse(clusterRpcClientProxy.isRunning(member));
     }
+
+    @Test
+    void testSendRequestWhenClientNullThrows() {
+        Member unknownMember = new Member();
+        unknownMember.setIp("10.10.10.10");
+        NacosException e = assertThrows(NacosException.class,
+                () -> clusterRpcClientProxy.sendRequest(unknownMember, new HealthCheckRequest()));
+        assertEquals(CLIENT_INVALID_PARAM, e.getErrCode());
+        assertTrue(e.getMessage().contains("No rpc client"));
+    }
+
+    @Test
+    void testAsyncRequestWhenClientNullThrows() {
+        Member unknownMember = new Member();
+        unknownMember.setIp("10.10.10.10");
+        RequestCallBack callBack = new RequestCallBack() {
+            @Override
+            public Executor getExecutor() {
+                return null;
+            }
+            @Override
+            public long getTimeout() {
+                return 0;
+            }
+            @Override
+            public void onResponse(Response response) {
+            }
+            @Override
+            public void onException(Throwable throwable) {
+            }
+        };
+        NacosException e = assertThrows(NacosException.class,
+                () -> clusterRpcClientProxy.asyncRequest(unknownMember, new HealthCheckRequest(), callBack));
+        assertEquals(CLIENT_INVALID_PARAM, e.getErrCode());
+        assertTrue(e.getMessage().contains("No rpc client"));
+    }
+
 }

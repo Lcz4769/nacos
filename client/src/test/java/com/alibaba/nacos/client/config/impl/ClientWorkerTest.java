@@ -30,18 +30,21 @@ import com.alibaba.nacos.api.config.remote.response.ClientConfigMetricResponse;
 import com.alibaba.nacos.api.config.remote.response.ConfigChangeBatchListenResponse;
 import com.alibaba.nacos.api.config.remote.response.ConfigPublishResponse;
 import com.alibaba.nacos.api.config.remote.response.ConfigQueryResponse;
+import com.alibaba.nacos.api.config.remote.response.ConfigRemoveResponse;
 import com.alibaba.nacos.api.exception.NacosException;
 import com.alibaba.nacos.client.config.common.GroupKey;
 import com.alibaba.nacos.client.config.filter.impl.ConfigFilterChainManager;
 import com.alibaba.nacos.client.config.filter.impl.ConfigResponse;
 import com.alibaba.nacos.client.env.NacosClientProperties;
+import com.alibaba.nacos.client.monitor.MetricsMonitor;
 import com.alibaba.nacos.common.remote.ConnectionType;
 import com.alibaba.nacos.common.remote.client.RpcClient;
 import com.alibaba.nacos.common.remote.client.RpcClientFactory;
-import com.alibaba.nacos.common.remote.client.RpcClientTlsConfig;
+import com.alibaba.nacos.common.remote.client.grpc.GrpcClientConfig;
 import com.alibaba.nacos.common.utils.JacksonUtils;
 import com.alibaba.nacos.common.utils.MD5Utils;
 import com.fasterxml.jackson.databind.JsonNode;
+import io.prometheus.client.Gauge;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -65,6 +68,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static com.alibaba.nacos.api.annotation.NacosProperties.NAMESPACE;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -76,7 +80,11 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
 class ClientWorkerTest {
@@ -95,20 +103,18 @@ class ClientWorkerTest {
     private ClientWorker clientWorkerSpy;
     
     @BeforeEach
-    void before() {
+    void before() throws Exception {
         rpcClientFactoryMockedStatic = Mockito.mockStatic(RpcClientFactory.class);
         
-        rpcClientFactoryMockedStatic.when(
-                () -> RpcClientFactory.createClient(anyString(), any(ConnectionType.class), any(Map.class),
-                        any(RpcClientTlsConfig.class))).thenReturn(rpcClient);
-        rpcClientFactoryMockedStatic.when(
-                () -> RpcClientFactory.createClient(anyString(), any(ConnectionType.class), any(Map.class),
-                        any(RpcClientTlsConfig.class))).thenReturn(rpcClient);
+        rpcClientFactoryMockedStatic.when(() -> RpcClientFactory.createClient(anyString(), any(ConnectionType.class),
+                any(GrpcClientConfig.class))).thenReturn(rpcClient);
+        rpcClientFactoryMockedStatic.when(() -> RpcClientFactory.createClient(anyString(), any(ConnectionType.class),
+                any(GrpcClientConfig.class))).thenReturn(rpcClient);
         localConfigInfoProcessorMockedStatic = Mockito.mockStatic(LocalConfigInfoProcessor.class);
         Properties properties = new Properties();
         properties.put(PropertyKeyConst.NAMESPACE, TEST_NAMESPACE);
         ConfigFilterChainManager filter = new ConfigFilterChainManager(properties);
-        ServerListManager serverListManager = Mockito.mock(ServerListManager.class);
+        ConfigServerListManager serverListManager = mock(ConfigServerListManager.class);
         final NacosClientProperties nacosClientProperties = NacosClientProperties.PROTOTYPE.derive(properties);
         try {
             clientWorker = new ClientWorker(filter, serverListManager, nacosClientProperties);
@@ -128,7 +134,7 @@ class ClientWorkerTest {
     void testConstruct() throws NacosException {
         Properties prop = new Properties();
         ConfigFilterChainManager filter = new ConfigFilterChainManager(new Properties());
-        ServerListManager agent = Mockito.mock(ServerListManager.class);
+        ConfigServerListManager agent = Mockito.mock(ConfigServerListManager.class);
         
         final NacosClientProperties nacosClientProperties = NacosClientProperties.PROTOTYPE.derive(prop);
         ClientWorker clientWorker = new ClientWorker(filter, agent, nacosClientProperties);
@@ -139,7 +145,7 @@ class ClientWorkerTest {
     void testAddListenerWithoutTenant() throws NacosException {
         Properties prop = new Properties();
         ConfigFilterChainManager filter = new ConfigFilterChainManager(new Properties());
-        ServerListManager agent = Mockito.mock(ServerListManager.class);
+        ConfigServerListManager agent = Mockito.mock(ConfigServerListManager.class);
         
         final NacosClientProperties nacosClientProperties = NacosClientProperties.PROTOTYPE.derive(prop);
         ClientWorker clientWorker = new ClientWorker(filter, agent, nacosClientProperties);
@@ -169,7 +175,7 @@ class ClientWorkerTest {
     void testListenerWithTenant() throws NacosException {
         Properties prop = new Properties();
         ConfigFilterChainManager filter = new ConfigFilterChainManager(new Properties());
-        ServerListManager agent = Mockito.mock(ServerListManager.class);
+        ConfigServerListManager agent = Mockito.mock(ConfigServerListManager.class);
         
         final NacosClientProperties nacosClientProperties = NacosClientProperties.PROTOTYPE.derive(prop);
         ClientWorker clientWorker = new ClientWorker(filter, agent, nacosClientProperties);
@@ -215,7 +221,7 @@ class ClientWorkerTest {
     void testPublishConfigSuccess() throws NacosException {
         Properties prop = new Properties();
         ConfigFilterChainManager filter = new ConfigFilterChainManager(new Properties());
-        ServerListManager agent = Mockito.mock(ServerListManager.class);
+        ConfigServerListManager agent = Mockito.mock(ConfigServerListManager.class);
         
         final NacosClientProperties nacosClientProperties = NacosClientProperties.PROTOTYPE.derive(prop);
         ClientWorker clientWorker = new ClientWorker(filter, agent, nacosClientProperties);
@@ -232,19 +238,17 @@ class ClientWorkerTest {
         String casMd5 = "1111";
         
         String type = "properties";
-        Mockito.when(rpcClient.request(any(ConfigPublishRequest.class)))
-                .thenReturn(new ConfigPublishResponse());
+        Mockito.when(rpcClient.request(any(ConfigPublishRequest.class))).thenReturn(new ConfigPublishResponse());
         boolean b = clientWorker.publishConfig(dataId, group, tenant, appName, tag, betaIps, content, null, casMd5,
                 type);
         assertTrue(b);
-        
     }
     
     @Test
     void testPublishConfigFail() throws NacosException {
         Properties prop = new Properties();
         ConfigFilterChainManager filter = new ConfigFilterChainManager(new Properties());
-        ServerListManager agent = Mockito.mock(ServerListManager.class);
+        ConfigServerListManager agent = Mockito.mock(ConfigServerListManager.class);
         
         final NacosClientProperties nacosClientProperties = NacosClientProperties.PROTOTYPE.derive(prop);
         ClientWorker clientWorker = new ClientWorker(filter, agent, nacosClientProperties);
@@ -273,7 +277,7 @@ class ClientWorkerTest {
     void testPublishConfigException() throws NacosException {
         Properties prop = new Properties();
         ConfigFilterChainManager filter = new ConfigFilterChainManager(new Properties());
-        ServerListManager agent = Mockito.mock(ServerListManager.class);
+        ConfigServerListManager agent = Mockito.mock(ConfigServerListManager.class);
         
         final NacosClientProperties nacosClientProperties = NacosClientProperties.PROTOTYPE.derive(prop);
         ClientWorker clientWorker = new ClientWorker(filter, agent, nacosClientProperties);
@@ -302,7 +306,7 @@ class ClientWorkerTest {
         
         Properties prop = new Properties();
         ConfigFilterChainManager filter = new ConfigFilterChainManager(new Properties());
-        ServerListManager agent = Mockito.mock(ServerListManager.class);
+        ConfigServerListManager agent = Mockito.mock(ConfigServerListManager.class);
         
         final NacosClientProperties nacosClientProperties = NacosClientProperties.PROTOTYPE.derive(prop);
         ClientWorker clientWorker = new ClientWorker(filter, agent, nacosClientProperties);
@@ -329,7 +333,7 @@ class ClientWorkerTest {
     void testGeConfigConfigSuccess() throws NacosException {
         
         Properties prop = new Properties();
-        ServerListManager agent = Mockito.mock(ServerListManager.class);
+        ConfigServerListManager agent = Mockito.mock(ConfigServerListManager.class);
         final NacosClientProperties nacosClientProperties = NacosClientProperties.PROTOTYPE.derive(prop);
         ClientWorker clientWorker = new ClientWorker(null, agent, nacosClientProperties);
         
@@ -355,7 +359,7 @@ class ClientWorkerTest {
         String tenant = "c";
         
         prop.put(NAMESPACE, tenant);
-        ServerListManager agent = Mockito.mock(ServerListManager.class);
+        ConfigServerListManager agent = Mockito.mock(ConfigServerListManager.class);
         final NacosClientProperties nacosClientProperties = NacosClientProperties.PROTOTYPE.derive(prop);
         ClientWorker clientWorker = new ClientWorker(null, agent, nacosClientProperties);
         
@@ -385,7 +389,7 @@ class ClientWorkerTest {
         String tenant = "c";
         
         prop.put(NAMESPACE, tenant);
-        ServerListManager agent = Mockito.mock(ServerListManager.class);
+        ConfigServerListManager agent = Mockito.mock(ConfigServerListManager.class);
         final NacosClientProperties nacosClientProperties = NacosClientProperties.PROTOTYPE.derive(prop);
         ClientWorker clientWorker = new ClientWorker(null, agent, nacosClientProperties);
         
@@ -431,7 +435,7 @@ class ClientWorkerTest {
     void testGeConfigConfigNotFound() throws NacosException {
         
         Properties prop = new Properties();
-        ServerListManager agent = Mockito.mock(ServerListManager.class);
+        ConfigServerListManager agent = Mockito.mock(ConfigServerListManager.class);
         final NacosClientProperties nacosClientProperties = NacosClientProperties.PROTOTYPE.derive(prop);
         ClientWorker clientWorker = new ClientWorker(null, agent, nacosClientProperties);
         
@@ -454,7 +458,7 @@ class ClientWorkerTest {
     void testGeConfigConfigConflict() throws NacosException {
         
         Properties prop = new Properties();
-        ServerListManager agent = Mockito.mock(ServerListManager.class);
+        ConfigServerListManager agent = Mockito.mock(ConfigServerListManager.class);
         final NacosClientProperties nacosClientProperties = NacosClientProperties.PROTOTYPE.derive(prop);
         ClientWorker clientWorker = new ClientWorker(null, agent, nacosClientProperties);
         
@@ -477,7 +481,7 @@ class ClientWorkerTest {
     void testShutdown() throws NacosException, NoSuchFieldException, IllegalAccessException {
         Properties prop = new Properties();
         ConfigFilterChainManager filter = new ConfigFilterChainManager(new Properties());
-        ServerListManager agent = Mockito.mock(ServerListManager.class);
+        ConfigServerListManager agent = Mockito.mock(ConfigServerListManager.class);
         
         final NacosClientProperties nacosClientProperties = NacosClientProperties.PROTOTYPE.derive(prop);
         ClientWorker clientWorker = new ClientWorker(filter, agent, nacosClientProperties);
@@ -485,7 +489,7 @@ class ClientWorkerTest {
         Field agent1 = ClientWorker.class.getDeclaredField("agent");
         agent1.setAccessible(true);
         ConfigTransportClient o = (ConfigTransportClient) agent1.get(clientWorker);
-        assertTrue(o.executor.isShutdown());
+        assertTrue(o.getExecutor().isShutdown());
         agent1.setAccessible(false);
         
         assertNull(clientWorker.getAgentName());
@@ -495,7 +499,7 @@ class ClientWorkerTest {
     void testExecuteConfigListen() throws Exception {
         Properties prop = new Properties();
         ConfigFilterChainManager filter = new ConfigFilterChainManager(new Properties());
-        ServerListManager agent = Mockito.mock(ServerListManager.class);
+        ConfigServerListManager agent = Mockito.mock(ConfigServerListManager.class);
         Mockito.when(agent.getName()).thenReturn("mocktest");
         final NacosClientProperties nacosClientProperties = NacosClientProperties.PROTOTYPE.derive(prop);
         ClientWorker clientWorker = new ClientWorker(filter, agent, nacosClientProperties);
@@ -558,12 +562,10 @@ class ClientWorkerTest {
         
         RpcClient rpcClientInner = Mockito.mock(RpcClient.class);
         Mockito.when(rpcClientInner.isWaitInitiated()).thenReturn(true, false);
-        rpcClientFactoryMockedStatic.when(
-                () -> RpcClientFactory.createClient(anyString(), any(ConnectionType.class), any(Map.class),
-                        any(RpcClientTlsConfig.class))).thenReturn(rpcClientInner);
+        rpcClientFactoryMockedStatic.when(() -> RpcClientFactory.createClient(anyString(), any(ConnectionType.class),
+                any(GrpcClientConfig.class))).thenReturn(rpcClientInner);
         // mock listen and remove listen request
-        Mockito.when(rpcClientInner.request(any(ConfigBatchListenRequest.class)))
-                .thenReturn(response, response);
+        Mockito.when(rpcClientInner.request(any(ConfigBatchListenRequest.class))).thenReturn(response, response);
         // mock query changed config
         ConfigQueryResponse configQueryResponse = new ConfigQueryResponse();
         configQueryResponse.setContent("content" + System.currentTimeMillis());
@@ -621,7 +623,7 @@ class ClientWorkerTest {
     void testIsHealthServer() throws NacosException, NoSuchFieldException, IllegalAccessException {
         Properties prop = new Properties();
         ConfigFilterChainManager filter = new ConfigFilterChainManager(new Properties());
-        ServerListManager agent = Mockito.mock(ServerListManager.class);
+        ConfigServerListManager agent = Mockito.mock(ConfigServerListManager.class);
         
         final NacosClientProperties nacosClientProperties = NacosClientProperties.PROTOTYPE.derive(prop);
         ClientWorker clientWorker = new ClientWorker(filter, agent, nacosClientProperties);
@@ -645,7 +647,7 @@ class ClientWorkerTest {
         putCacheMethod.setAccessible(true);
         Properties prop = new Properties();
         ConfigFilterChainManager filter = new ConfigFilterChainManager(new Properties());
-        ServerListManager agent = Mockito.mock(ServerListManager.class);
+        ConfigServerListManager agent = Mockito.mock(ConfigServerListManager.class);
         final NacosClientProperties nacosClientProperties = NacosClientProperties.PROTOTYPE.derive(prop);
         ClientWorker clientWorker = new ClientWorker(filter, agent, nacosClientProperties);
         String key = "testKey";
@@ -760,5 +762,188 @@ class ClientWorkerTest {
         assertEquals(cacheDataFromCache2, differentCacheData);
         assertFalse(cacheDataFromCache2.isDiscard());
         assertFalse(cacheDataFromCache2.isConsistentWithServer());
+    }
+    
+    @Test
+    void testResponse403() throws NacosException {
+        Properties prop = new Properties();
+        ConfigFilterChainManager filter = new ConfigFilterChainManager(new Properties());
+        ConfigServerListManager agent = Mockito.mock(ConfigServerListManager.class);
+        
+        final NacosClientProperties nacosClientProperties = NacosClientProperties.PROTOTYPE.derive(prop);
+        final ClientWorker clientWorker = new ClientWorker(filter, agent, nacosClientProperties);
+        
+        ConfigRemoveResponse response = ConfigRemoveResponse.buildFailResponse("accessToken invalid");
+        response.setErrorCode(ConfigQueryResponse.NO_RIGHT);
+        Mockito.when(rpcClient.request(any(ConfigRemoveRequest.class))).thenReturn(response);
+        boolean result = clientWorker.removeConfig("a", "b", "c", "tag");
+        assertFalse(result);
+    }
+    
+    @Test
+    void testRemoveCacheWithMetricsEnabled() throws Exception {
+        String dataId = "testDataId";
+        String group = "testGroup";
+        String tenant = "testTenant";
+        
+        Properties prop = new Properties();
+        prop.put("enableClientMetrics", "true");
+        ConfigFilterChainManager filter = new ConfigFilterChainManager(new Properties());
+        ConfigServerListManager agent = mock(ConfigServerListManager.class);
+        
+        final NacosClientProperties nacosClientProperties = NacosClientProperties.PROTOTYPE.derive(prop);
+        final ClientWorker clientWorker = new ClientWorker(filter, agent, nacosClientProperties);
+        
+        Gauge.Child mockGaugeChild = mock(Gauge.Child.class);
+        try (MockedStatic<MetricsMonitor> mockedMetricsMonitor = Mockito.mockStatic(MetricsMonitor.class)) {
+            mockedMetricsMonitor.when(MetricsMonitor::getListenConfigCountMonitor).thenReturn(mockGaugeChild);
+            
+            clientWorker.removeCache(dataId, group, tenant);
+            
+            verify(mockGaugeChild, times(1)).set(0);
+        }
+    }
+    
+    @Test
+    void testRemoveCacheWithMetricsDisabled() throws Exception {
+        String dataId = "testDataId";
+        String group = "testGroup";
+        String tenant = "testTenant";
+        
+        Properties prop = new Properties();
+        prop.put(PropertyKeyConst.ENABLE_CLIENT_METRICS, "false");
+        ConfigFilterChainManager filter = new ConfigFilterChainManager(new Properties());
+        ConfigServerListManager agent = mock(ConfigServerListManager.class);
+        
+        final NacosClientProperties nacosClientProperties = NacosClientProperties.PROTOTYPE.derive(prop);
+        final ClientWorker clientWorker = new ClientWorker(filter, agent, nacosClientProperties);
+        clientWorkerSpy = Mockito.spy(clientWorker);
+        
+        Gauge.Child mockGaugeChild = mock(Gauge.Child.class);
+        try (MockedStatic<MetricsMonitor> mockedMetricsMonitor = Mockito.mockStatic(MetricsMonitor.class)) {
+            mockedMetricsMonitor.when(MetricsMonitor::getListenConfigCountMonitor).thenReturn(mockGaugeChild);
+            
+            clientWorker.removeCache(dataId, group, tenant);
+            
+            verify(mockGaugeChild, times(0)).set(0);
+        }
+    }
+    
+    @Test
+    void testRemoveCacheWithDefaultClientMetricsEnabled() throws Exception {
+        String dataId = "testDataId";
+        String group = "testGroup";
+        String tenant = "testTenant";
+        
+        Properties prop = new Properties();
+        ConfigFilterChainManager filter = new ConfigFilterChainManager(new Properties());
+        ConfigServerListManager agent = mock(ConfigServerListManager.class);
+        
+        final NacosClientProperties nacosClientProperties = NacosClientProperties.PROTOTYPE.derive(prop);
+        final ClientWorker clientWorker = new ClientWorker(filter, agent, nacosClientProperties);
+        
+        Gauge.Child mockGaugeChild = mock(Gauge.Child.class);
+        try (MockedStatic<MetricsMonitor> mockedMetricsMonitor = Mockito.mockStatic(MetricsMonitor.class)) {
+            mockedMetricsMonitor.when(MetricsMonitor::getListenConfigCountMonitor).thenReturn(mockGaugeChild);
+            
+            clientWorker.removeCache(dataId, group, tenant);
+            
+            verify(mockGaugeChild, times(1)).set(0);
+        }
+    }
+    
+    @Test
+    void testMetricsMonitorSetThrowsException() throws NacosException {
+        String dataId = "testDataId";
+        String group = "testGroup";
+        String tenant = "testTenant";
+        
+        Properties prop = new Properties();
+        prop.put(PropertyKeyConst.ENABLE_CLIENT_METRICS, "true");
+        ConfigFilterChainManager filter = new ConfigFilterChainManager(new Properties());
+        ConfigServerListManager agent = mock(ConfigServerListManager.class);
+        
+        final NacosClientProperties nacosClientProperties = NacosClientProperties.PROTOTYPE.derive(prop);
+        final ClientWorker clientWorker = new ClientWorker(filter, agent, nacosClientProperties);
+        clientWorkerSpy = Mockito.spy(clientWorker);
+        
+        Gauge.Child mockGaugeChild = mock(Gauge.Child.class);
+        try (MockedStatic<MetricsMonitor> mockedMetricsMonitor = Mockito.mockStatic(MetricsMonitor.class)) {
+            mockedMetricsMonitor.when(MetricsMonitor::getListenConfigCountMonitor).thenReturn(mockGaugeChild);
+            
+            RuntimeException exception = new RuntimeException("Mocked exception");
+            doThrow(exception).when(mockGaugeChild).set(0);
+            
+            assertDoesNotThrow(() -> clientWorker.removeCache(dataId, group, tenant));
+        }
+    }
+    
+    @Test
+    public void testAddCacheDataIfAbsentEnableClientMetricsTrue() throws NacosException {
+        String dataId = "testDataId";
+        String group = "testGroup";
+        String tenant = "testTenant";
+        
+        Properties prop = new Properties();
+        prop.put(PropertyKeyConst.ENABLE_CLIENT_METRICS, "true");
+        ConfigFilterChainManager filter = new ConfigFilterChainManager(new Properties());
+        ConfigServerListManager agent = mock(ConfigServerListManager.class);
+        
+        NacosClientProperties nacosClientProperties = NacosClientProperties.PROTOTYPE.derive(prop);
+        ClientWorker clientWorker = new ClientWorker(filter, agent, nacosClientProperties);
+        
+        Gauge.Child mockGaugeChild = mock(Gauge.Child.class);
+        try (MockedStatic<MetricsMonitor> mockedMetricsMonitor = Mockito.mockStatic(MetricsMonitor.class)) {
+            mockedMetricsMonitor.when(MetricsMonitor::getListenConfigCountMonitor).thenReturn(mockGaugeChild);
+            
+            clientWorker.addCacheDataIfAbsent(dataId, group, tenant);
+            
+            verify(mockGaugeChild, times(1)).set(1);
+        }
+    }
+    
+    @Test
+    public void testAddCacheDataIfAbsentEnableClientMetricsFalse() throws NacosException {
+        
+        String dataId = "testDataId";
+        String group = "testGroup";
+        String tenant = "testTenant";
+        
+        Properties prop = new Properties();
+        prop.put(PropertyKeyConst.ENABLE_CLIENT_METRICS, "false");
+        ConfigFilterChainManager filter = new ConfigFilterChainManager(new Properties());
+        ConfigServerListManager agent = mock(ConfigServerListManager.class);
+        
+        NacosClientProperties nacosClientProperties = NacosClientProperties.PROTOTYPE.derive(prop);
+        ClientWorker clientWorker = new ClientWorker(filter, agent, nacosClientProperties);
+        
+        try (MockedStatic<MetricsMonitor> mockedMetricsMonitor = Mockito.mockStatic(MetricsMonitor.class)) {
+            clientWorker.addCacheDataIfAbsent(dataId, group, tenant);
+            
+            mockedMetricsMonitor.verify(MetricsMonitor::getListenConfigCountMonitor, never());
+        }
+    }
+    
+    @Test
+    public void testAddCacheDataIfAbsentEnableClientMetricsNotSet() throws NacosException {
+        String dataId = "testDataId";
+        String group = "testGroup";
+        String tenant = "testTenant";
+        
+        Properties prop = new Properties();
+        ConfigFilterChainManager filter = new ConfigFilterChainManager(new Properties());
+        ConfigServerListManager agent = mock(ConfigServerListManager.class);
+        
+        NacosClientProperties nacosClientProperties = NacosClientProperties.PROTOTYPE.derive(prop);
+        ClientWorker clientWorker = new ClientWorker(filter, agent, nacosClientProperties);
+        
+        Gauge.Child mockGaugeChild = mock(Gauge.Child.class);
+        try (MockedStatic<MetricsMonitor> mockedMetricsMonitor = Mockito.mockStatic(MetricsMonitor.class)) {
+            mockedMetricsMonitor.when(MetricsMonitor::getListenConfigCountMonitor).thenReturn(mockGaugeChild);
+            
+            clientWorker.addCacheDataIfAbsent(dataId, group, tenant);
+            
+            verify(mockGaugeChild, times(1)).set(1);
+        }
     }
 }

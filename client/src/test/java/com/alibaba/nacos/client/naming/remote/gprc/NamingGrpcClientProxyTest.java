@@ -47,7 +47,8 @@ import com.alibaba.nacos.api.selector.ExpressionSelector;
 import com.alibaba.nacos.api.selector.NoneSelector;
 import com.alibaba.nacos.client.env.NacosClientProperties;
 import com.alibaba.nacos.client.naming.cache.ServiceInfoHolder;
-import com.alibaba.nacos.client.naming.event.ServerListChangedEvent;
+import com.alibaba.nacos.client.naming.cache.NamingFuzzyWatchServiceListHolder;
+import com.alibaba.nacos.client.address.ServerListChangeEvent;
 import com.alibaba.nacos.client.naming.remote.gprc.redo.NamingGrpcRedoService;
 import com.alibaba.nacos.client.security.SecurityProxy;
 import com.alibaba.nacos.common.notify.NotifyCenter;
@@ -121,6 +122,9 @@ class NamingGrpcClientProxyTest {
     private ServiceInfoHolder holder;
     
     @Mock
+    private NamingFuzzyWatchServiceListHolder namingFuzzyWatchServiceListHolder;
+    
+    @Mock
     private RpcClient rpcClient;
     
     private Properties prop;
@@ -145,7 +149,8 @@ class NamingGrpcClientProxyTest {
         prop = new Properties();
         
         final NacosClientProperties nacosClientProperties = NacosClientProperties.PROTOTYPE.derive(prop);
-        client = new NamingGrpcClientProxy(NAMESPACE_ID, proxy, factory, nacosClientProperties, holder);
+        client = new NamingGrpcClientProxy(NAMESPACE_ID, proxy, factory, nacosClientProperties, holder,
+                namingFuzzyWatchServiceListHolder);
         
         Field uuidField = NamingGrpcClientProxy.class.getDeclaredField("uuid");
         uuidField.setAccessible(true);
@@ -524,34 +529,34 @@ class NamingGrpcClientProxyTest {
     
     @Test
     void testIsAbilitySupportedByServer1() {
-        when(this.rpcClient.getConnectionAbility(AbilityKey.SERVER_SUPPORT_PERSISTENT_INSTANCE_BY_GRPC)).thenReturn(
+        when(this.rpcClient.getConnectionAbility(AbilityKey.SERVER_PERSISTENT_INSTANCE_BY_GRPC)).thenReturn(
                 AbilityStatus.SUPPORTED);
-        assertTrue(client.isAbilitySupportedByServer(AbilityKey.SERVER_SUPPORT_PERSISTENT_INSTANCE_BY_GRPC));
-        verify(this.rpcClient, times(1)).getConnectionAbility(AbilityKey.SERVER_SUPPORT_PERSISTENT_INSTANCE_BY_GRPC);
+        assertTrue(client.isAbilitySupportedByServer(AbilityKey.SERVER_PERSISTENT_INSTANCE_BY_GRPC));
+        verify(this.rpcClient, times(1)).getConnectionAbility(AbilityKey.SERVER_PERSISTENT_INSTANCE_BY_GRPC);
     }
     
     @Test
     void testIsAbilitySupportedByServer2() {
-        when(this.rpcClient.getConnectionAbility(AbilityKey.SERVER_SUPPORT_PERSISTENT_INSTANCE_BY_GRPC)).thenReturn(
+        when(this.rpcClient.getConnectionAbility(AbilityKey.SERVER_PERSISTENT_INSTANCE_BY_GRPC)).thenReturn(
                 AbilityStatus.NOT_SUPPORTED);
-        assertFalse(client.isAbilitySupportedByServer(AbilityKey.SERVER_SUPPORT_PERSISTENT_INSTANCE_BY_GRPC));
-        verify(this.rpcClient, times(1)).getConnectionAbility(AbilityKey.SERVER_SUPPORT_PERSISTENT_INSTANCE_BY_GRPC);
+        assertFalse(client.isAbilitySupportedByServer(AbilityKey.SERVER_PERSISTENT_INSTANCE_BY_GRPC));
+        verify(this.rpcClient, times(1)).getConnectionAbility(AbilityKey.SERVER_PERSISTENT_INSTANCE_BY_GRPC);
     }
     
     @Test
     void testIsAbilitySupportedByServer3() {
-        when(this.rpcClient.getConnectionAbility(AbilityKey.SERVER_SUPPORT_PERSISTENT_INSTANCE_BY_GRPC)).thenReturn(
+        when(this.rpcClient.getConnectionAbility(AbilityKey.SERVER_PERSISTENT_INSTANCE_BY_GRPC)).thenReturn(
                 AbilityStatus.UNKNOWN);
-        assertFalse(client.isAbilitySupportedByServer(AbilityKey.SERVER_SUPPORT_PERSISTENT_INSTANCE_BY_GRPC));
-        verify(this.rpcClient, times(1)).getConnectionAbility(AbilityKey.SERVER_SUPPORT_PERSISTENT_INSTANCE_BY_GRPC);
+        assertFalse(client.isAbilitySupportedByServer(AbilityKey.SERVER_PERSISTENT_INSTANCE_BY_GRPC));
+        verify(this.rpcClient, times(1)).getConnectionAbility(AbilityKey.SERVER_PERSISTENT_INSTANCE_BY_GRPC);
     }
     
     @Test
     void testIsAbilitySupportedByServer4() {
-        when(this.rpcClient.getConnectionAbility(AbilityKey.SERVER_SUPPORT_PERSISTENT_INSTANCE_BY_GRPC)).thenReturn(
+        when(this.rpcClient.getConnectionAbility(AbilityKey.SERVER_PERSISTENT_INSTANCE_BY_GRPC)).thenReturn(
                 null);
-        assertFalse(client.isAbilitySupportedByServer(AbilityKey.SERVER_SUPPORT_PERSISTENT_INSTANCE_BY_GRPC));
-        verify(this.rpcClient, times(1)).getConnectionAbility(AbilityKey.SERVER_SUPPORT_PERSISTENT_INSTANCE_BY_GRPC);
+        assertFalse(client.isAbilitySupportedByServer(AbilityKey.SERVER_PERSISTENT_INSTANCE_BY_GRPC));
+        verify(this.rpcClient, times(1)).getConnectionAbility(AbilityKey.SERVER_PERSISTENT_INSTANCE_BY_GRPC);
     }
     
     @Test
@@ -683,7 +688,7 @@ class NamingGrpcClientProxyTest {
         String newServer = "www.aliyun.com";
         when(factory.genNextServer()).thenReturn(newServer);
         when(factory.getServerList()).thenReturn(Stream.of(newServer, "anotherServer").collect(Collectors.toList()));
-        NotifyCenter.publishEvent(new ServerListChangedEvent());
+        NotifyCenter.publishEvent(new ServerListChangeEvent());
         
         retry = 10;
         while (ORIGIN_SERVER.equals(rpc.getCurrentServer().getServerIp())) {
@@ -699,7 +704,8 @@ class NamingGrpcClientProxyTest {
     @Test
     void testConfigAppNameLabels() throws Exception {
         final NacosClientProperties nacosClientProperties = NacosClientProperties.PROTOTYPE.derive(prop);
-        client = new NamingGrpcClientProxy(NAMESPACE_ID, proxy, factory, nacosClientProperties, holder);
+        client = new NamingGrpcClientProxy(NAMESPACE_ID, proxy, factory, nacosClientProperties, holder,
+                namingFuzzyWatchServiceListHolder);
         Field rpcClientField = NamingGrpcClientProxy.class.getDeclaredField("rpcClient");
         rpcClientField.setAccessible(true);
         RpcClient rpcClient = (RpcClient) rpcClientField.get(client);
@@ -708,5 +714,22 @@ class NamingGrpcClientProxyTest {
         GrpcClientConfig config = (GrpcClientConfig) clientConfig.get(rpcClient);
         String appName = config.labels().get(Constants.APPNAME);
         assertNotNull(appName);
+    }
+    
+    @Test
+    void testResponseCode403Exception() throws NacosException {
+        Throwable exception = assertThrows(NacosException.class, () -> {
+
+            when(this.rpcClient.request(Mockito.any())).thenReturn(ErrorResponse.build(403, "Invalid signature"));
+
+            try {
+                client.registerService(SERVICE_NAME, GROUP_NAME, instance);
+            } catch (NacosException ex) {
+                assertNull(ex.getCause());
+
+                throw ex;
+            }
+        });
+        assertTrue(exception.getMessage().contains("Invalid signature"));
     }
 }

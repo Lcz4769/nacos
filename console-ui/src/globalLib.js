@@ -17,6 +17,7 @@
 import projectConfig from './config';
 import $ from 'jquery';
 import { Message } from '@alifd/next';
+import { toastError } from './utils/message';
 import { LOGINPAGE_ENABLED } from './constants';
 
 function goLogin() {
@@ -489,7 +490,7 @@ const request = (function(_global) {
     return config;
   }
 
-  function Request(...allArgs) {
+  async function Request(...allArgs) {
     // 除了config外的传参
     let [config, ...args] = allArgs;
     // 处理前置中间件
@@ -530,32 +531,39 @@ const request = (function(_global) {
       accessTokenInHeader = accessToken;
     }
 
+    // Build final URL - only add ? if there are parameters
+    const finalUrl = params.length > 0 ? [url, params.join('&')].join('?') : url;
+
     return $.ajax(
       Object.assign({}, config, {
         type: config.type,
-        url: [url, params.join('&')].join('?'),
+        url: finalUrl,
         data: config.data || '',
         dataType: config.dataType || 'json',
         beforeSend(xhr) {
           config.beforeSend && config.beforeSend(xhr);
         },
         headers: {
-          Authorization: localStorage.getItem('token') || undefined,
+          Authorization: accessTokenInHeader ? `Bearer ${accessTokenInHeader}` : undefined,
           AccessToken: accessTokenInHeader,
         },
       })
     ).then(
-      success => {},
+      success => {
+        return success;
+      },
       error => {
         // 处理403 forbidden
         const { status, responseJSON = {} } = error || {};
         if (responseJSON.message) {
-          Message.error(responseJSON.message);
+          const _errorcontent = responseJSON?.data ? ` : ${responseJSON.data}` : '';
+          toastError(responseJSON.message + _errorcontent);
         }
-        if (
+        const shouldRedirectToLogin =
           [401, 403].includes(status) &&
-          ['unknown user!', 'token invalid!', 'token expired!'].includes(responseJSON.message)
-        ) {
+          typeof responseJSON.message === 'string' &&
+          /(token\s*(invalid|expired)|unknown\s*user)/i.test(responseJSON.message);
+        if (shouldRedirectToLogin) {
           goLogin();
         }
         return error;

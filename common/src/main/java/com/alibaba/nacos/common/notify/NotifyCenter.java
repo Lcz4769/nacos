@@ -53,8 +53,9 @@ public class NotifyCenter {
     private static final AtomicBoolean CLOSED = new AtomicBoolean(false);
     
     private static final EventPublisherFactory DEFAULT_PUBLISHER_FACTORY;
-    
-    private static final NotifyCenter INSTANCE = new NotifyCenter();
+
+    @SuppressWarnings("checkstyle:StaticVariableName")
+    private static NotifyCenter INSTANCE = new NotifyCenter();
     
     private DefaultSharePublisher sharePublisher;
     
@@ -131,7 +132,7 @@ public class NotifyCenter {
         if (!CLOSED.compareAndSet(false, true)) {
             return;
         }
-        LOGGER.warn("[NotifyCenter] Start destroying Publisher");
+        LOGGER.info("[NotifyCenter] Start destroying Publisher");
         
         for (Map.Entry<String, EventPublisher> entry : INSTANCE.publisherMap.entrySet()) {
             try {
@@ -148,11 +149,11 @@ public class NotifyCenter {
             LOGGER.error("[SharePublisher] shutdown has error : ", e);
         }
         
-        LOGGER.warn("[NotifyCenter] Destruction of the end");
+        LOGGER.info("[NotifyCenter] Completed destruction of Publisher");
     }
     
     /**
-     * Register a Subscriber. If the Publisher concerned by the Subscriber does not exist, then PublihserMap will
+     * Register a Subscriber. If the Publisher concerned by the Subscriber does not exist, then PublisherMap will
      * preempt a placeholder Publisher with default EventPublisherFactory first.
      *
      * @param consumer subscriber
@@ -162,7 +163,7 @@ public class NotifyCenter {
     }
     
     /**
-     * Register a Subscriber. If the Publisher concerned by the Subscriber does not exist, then PublihserMap will
+     * Register a Subscriber. If the Publisher concerned by the Subscriber does not exist, then PublisherMap will
      * preempt a placeholder Publisher with specified EventPublisherFactory first.
      *
      * @param consumer subscriber

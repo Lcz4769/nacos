@@ -28,20 +28,20 @@ import com.alibaba.nacos.api.naming.utils.NamingUtils;
 import com.alibaba.nacos.api.selector.AbstractSelector;
 import com.alibaba.nacos.api.selector.ExpressionSelector;
 import com.alibaba.nacos.api.selector.SelectorType;
+import com.alibaba.nacos.client.address.ServerListChangeEvent;
 import com.alibaba.nacos.client.env.NacosClientProperties;
 import com.alibaba.nacos.client.monitor.MetricsMonitor;
-import com.alibaba.nacos.client.naming.core.ServerListManager;
-import com.alibaba.nacos.client.naming.event.ServerListChangedEvent;
+import com.alibaba.nacos.client.naming.core.NamingServerListManager;
 import com.alibaba.nacos.client.naming.remote.AbstractNamingClientProxy;
-import com.alibaba.nacos.client.naming.utils.CollectionUtils;
-import com.alibaba.nacos.client.naming.utils.NamingHttpUtil;
 import com.alibaba.nacos.client.naming.utils.UtilAndComs;
 import com.alibaba.nacos.client.security.SecurityProxy;
 import com.alibaba.nacos.common.http.HttpRestResult;
+import com.alibaba.nacos.common.http.HttpUtils;
 import com.alibaba.nacos.common.http.client.NacosRestTemplate;
 import com.alibaba.nacos.common.http.param.Header;
 import com.alibaba.nacos.common.http.param.Query;
 import com.alibaba.nacos.common.notify.Event;
+import com.alibaba.nacos.common.utils.CollectionUtils;
 import com.alibaba.nacos.common.utils.ConvertUtils;
 import com.alibaba.nacos.common.utils.HttpMethod;
 import com.alibaba.nacos.common.utils.InternetAddressUtil;
@@ -49,13 +49,13 @@ import com.alibaba.nacos.common.utils.JacksonUtils;
 import com.alibaba.nacos.common.utils.StringUtils;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
-import org.apache.http.HttpStatus;
+import org.apache.hc.core5.http.HttpStatus;
 
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Random;
+import java.util.concurrent.ThreadLocalRandom;
 
 import static com.alibaba.nacos.client.utils.LogUtils.NAMING_LOGGER;
 import static com.alibaba.nacos.common.constant.RequestUrlConstants.HTTPS_PREFIX;
@@ -71,6 +71,8 @@ public class NamingHttpClientProxy extends AbstractNamingClientProxy {
     private final NacosRestTemplate nacosRestTemplate = NamingHttpClientManager.getInstance().getNacosRestTemplate();
     
     private static final int DEFAULT_SERVER_PORT = 8848;
+    
+    private static final String MODULE_NAME = "Naming";
     
     private static final String IP_PARAM = "ip";
     
@@ -100,13 +102,15 @@ public class NamingHttpClientProxy extends AbstractNamingClientProxy {
     
     private final String namespaceId;
     
-    private final ServerListManager serverListManager;
+    private final NamingServerListManager serverListManager;
     
     private final int maxRetry;
     
     private int serverPort = DEFAULT_SERVER_PORT;
     
-    public NamingHttpClientProxy(String namespaceId, SecurityProxy securityProxy, ServerListManager serverListManager,
+    private boolean enableClientMetrics = true;
+    
+    public NamingHttpClientProxy(String namespaceId, SecurityProxy securityProxy, NamingServerListManager serverListManager,
             NacosClientProperties properties) {
         super(securityProxy);
         this.serverListManager = serverListManager;
@@ -114,16 +118,18 @@ public class NamingHttpClientProxy extends AbstractNamingClientProxy {
         this.namespaceId = namespaceId;
         this.maxRetry = ConvertUtils.toInt(properties.getProperty(PropertyKeyConst.NAMING_REQUEST_DOMAIN_RETRY_COUNT,
                 String.valueOf(UtilAndComs.REQUEST_DOMAIN_RETRY_COUNT)));
+        this.enableClientMetrics = Boolean.parseBoolean(
+                properties.getProperty(PropertyKeyConst.ENABLE_CLIENT_METRICS, "true"));
     }
     
     @Override
-    public void onEvent(ServerListChangedEvent event) {
+    public void onEvent(ServerListChangeEvent event) {
         // do nothing in http client
     }
     
     @Override
     public Class<? extends Event> subscribeType() {
-        return ServerListChangedEvent.class;
+        return ServerListChangeEvent.class;
     }
     
     @Override
@@ -269,10 +275,10 @@ public class NamingHttpClientProxy extends AbstractNamingClientProxy {
     @Override
     public boolean serverHealthy() {
         try {
-            String result = reqApi(UtilAndComs.nacosUrlBase + "/operator/metrics", new HashMap<>(8), HttpMethod.GET);
+            String result = reqApi(UtilAndComs.webContext + "/v3/admin/core/state/liveness", new HashMap<>(8), HttpMethod.GET);
             JsonNode json = JacksonUtils.toObj(result);
-            String serverStatus = json.get("status").asText();
-            return "UP".equals(serverStatus);
+            int statusCode = json.get("code").asInt();
+            return 0 == statusCode;
         } catch (Exception e) {
             return false;
         }
@@ -356,7 +362,6 @@ public class NamingHttpClientProxy extends AbstractNamingClientProxy {
         }
         
         NacosException exception = new NacosException();
-        
         if (serverListManager.isDomain()) {
             String nacosDomain = serverListManager.getNacosDomain();
             for (int i = 0; i < maxRetry; i++) {
@@ -370,8 +375,7 @@ public class NamingHttpClientProxy extends AbstractNamingClientProxy {
                 }
             }
         } else {
-            Random random = new Random();
-            int index = random.nextInt(servers.size());
+            int index = ThreadLocalRandom.current().nextInt(servers.size());
             
             for (int i = 0; i < servers.size(); i++) {
                 String server = servers.get(index);
@@ -414,7 +418,7 @@ public class NamingHttpClientProxy extends AbstractNamingClientProxy {
         String group = params.get(CommonParams.GROUP_NAME);
         String serviceName = params.get(CommonParams.SERVICE_NAME);
         params.putAll(getSecurityHeaders(namespace, group, serviceName));
-        Header header = NamingHttpUtil.builderHeader();
+        Header header = HttpUtils.builderHeader(MODULE_NAME);
         
         String url;
         if (curServer.startsWith(HTTPS_PREFIX) || curServer.startsWith(HTTP_PREFIX)) {
@@ -430,8 +434,15 @@ public class NamingHttpClientProxy extends AbstractNamingClientProxy {
                     Query.newInstance().initParams(params), body, method, String.class);
             end = System.currentTimeMillis();
             
-            MetricsMonitor.getNamingRequestMonitor(method, url, String.valueOf(restResult.getCode()))
-                    .observe(end - start);
+            if (enableClientMetrics) {
+                try {
+                    MetricsMonitor.getNamingRequestMonitor(method, url, String.valueOf(restResult.getCode()))
+                            .observe(end - start);
+                } catch (Throwable t) {
+                    NAMING_LOGGER.error("Failed to record metrics. Method: {}, URL: {}, HTTP Status Code: {}",
+                            method, url, restResult.getCode(), t);
+                }
+            }
             
             if (restResult.ok()) {
                 return restResult.getData();
@@ -439,6 +450,12 @@ public class NamingHttpClientProxy extends AbstractNamingClientProxy {
             if (HttpStatus.SC_NOT_MODIFIED == restResult.getCode()) {
                 return StringUtils.EMPTY;
             }
+            
+            // If the 403 login operation is triggered, refresh the accessToken of the client
+            if (HttpStatus.SC_FORBIDDEN == restResult.getCode()) {
+                reLogin();
+            }
+
             throw new NacosException(restResult.getCode(), restResult.getMessage());
         } catch (NacosException e) {
             NAMING_LOGGER.error("[NA] failed to request", e);

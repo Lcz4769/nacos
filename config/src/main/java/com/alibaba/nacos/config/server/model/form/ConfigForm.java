@@ -19,23 +19,25 @@ package com.alibaba.nacos.config.server.model.form;
 import com.alibaba.nacos.api.exception.api.NacosApiException;
 import com.alibaba.nacos.api.model.v2.ErrorCode;
 import com.alibaba.nacos.common.utils.StringUtils;
+import com.alibaba.nacos.api.model.NacosForm;
 import org.springframework.http.HttpStatus;
-
-import java.io.Serializable;
-import java.util.Objects;
 
 /**
  * ConfigForm.
  *
  * @author dongyafei
- * @date 2022/7/24
+ * @author xiweng.yy
  */
-public class ConfigForm implements Serializable {
+public class ConfigForm implements NacosForm, Cloneable {
     
     private static final long serialVersionUID = 4124932564086863921L;
     
     private String dataId;
     
+    /**
+     * Deprecated, please use {@link ConfigFormV3#groupName} replaced.
+     */
+    @Deprecated
     private String group;
     
     private String namespaceId = StringUtils.EMPTY;
@@ -50,6 +52,16 @@ public class ConfigForm implements Serializable {
     
     private String configTags;
     
+    private String encryptedDataKey;
+    
+    private String grayName;
+    
+    private String grayRuleExp;
+    
+    private String grayVersion;
+    
+    private int grayPriority;
+    
     private String desc;
     
     private String use;
@@ -60,14 +72,11 @@ public class ConfigForm implements Serializable {
     
     private String schema;
     
-    private String encryptedDataKey;
-    
     public ConfigForm() {
     }
     
     public ConfigForm(String dataId, String group, String namespaceId, String content, String tag, String appName,
-            String srcUser, String configTags, String desc, String use, String effect, String type, String schema,
-            String encryptedDataKey) {
+            String srcUser, String configTags, String desc, String use, String effect, String type, String schema) {
         this.dataId = dataId;
         this.group = group;
         this.namespaceId = namespaceId;
@@ -81,7 +90,17 @@ public class ConfigForm implements Serializable {
         this.effect = effect;
         this.type = type;
         this.schema = schema;
-        this.encryptedDataKey = encryptedDataKey;
+    }
+    
+    @Override
+    public ConfigForm clone() {
+        try {
+            // Object.clone() 是浅拷贝，但对于 String 和基本类型已经足够
+            return (ConfigForm) super.clone();
+        } catch (CloneNotSupportedException e) {
+            // 理论上不会发生，因为实现了接口Cloneable
+            throw new AssertionError(e);
+        }
     }
     
     public String getDataId() {
@@ -196,44 +215,39 @@ public class ConfigForm implements Serializable {
         this.encryptedDataKey = encryptedDataKey;
     }
     
-    @Override
-    public boolean equals(Object o) {
-        if (this == o) {
-            return true;
-        }
-        if (o == null || getClass() != o.getClass()) {
-            return false;
-        }
-        ConfigForm configForm = (ConfigForm) o;
-        return dataId.equals(configForm.dataId) && group.equals(configForm.group) && Objects.equals(namespaceId, configForm.namespaceId)
-                && content.equals(configForm.content) && Objects.equals(tag, configForm.tag) && Objects
-                .equals(appName, configForm.appName) && Objects.equals(srcUser, configForm.srcUser) && Objects
-                .equals(configTags, configForm.configTags) && Objects.equals(desc, configForm.desc) && Objects.equals(
-                use, configForm.use) && Objects.equals(effect, configForm.effect) && Objects.equals(type,
-                configForm.type) && Objects.equals(schema, configForm.schema) && Objects.equals(encryptedDataKey,
-                configForm.encryptedDataKey);
+    public String getGrayName() {
+        return grayName;
+    }
+    
+    public void setGrayName(String grayName) {
+        this.grayName = grayName;
+    }
+    
+    public String getGrayRuleExp() {
+        return grayRuleExp;
+    }
+    
+    public void setGrayRuleExp(String grayRuleExp) {
+        this.grayRuleExp = grayRuleExp;
+    }
+    
+    public String getGrayVersion() {
+        return grayVersion;
+    }
+    
+    public void setGrayVersion(String grayVersion) {
+        this.grayVersion = grayVersion;
+    }
+    
+    public int getGrayPriority() {
+        return grayPriority;
+    }
+    
+    public void setGrayPriority(int grayPriority) {
+        this.grayPriority = grayPriority;
     }
     
     @Override
-    public int hashCode() {
-        return Objects.hash(dataId, group, namespaceId, content, tag, appName, srcUser, configTags, desc, use, effect, type,
-                schema, encryptedDataKey);
-    }
-    
-    @Override
-    public String toString() {
-        return "ConfigVo{" + "dataId='" + dataId + '\'' + ", group='" + group + '\'' + ", namespaceId='" + namespaceId + '\''
-                + ", content='" + content + '\'' + ", tag='" + tag + '\'' + ", appName='" + appName + '\''
-                + ", srcUser='" + srcUser + '\'' + ", configTags='" + configTags + '\'' + ", desc='" + desc + '\''
-                + ", use='" + use + '\'' + ", effect='" + effect + '\'' + ", type='" + type + '\'' + ", schema='"
-                + schema + '\'' + ", encryptedDataKey='" + encryptedDataKey + '\'' + '}';
-    }
-    
-    /**
-     * Validate.
-     *
-     * @throws NacosApiException NacosApiException.
-     */
     public void validate() throws NacosApiException {
         if (StringUtils.isBlank(dataId)) {
             throw new NacosApiException(HttpStatus.BAD_REQUEST.value(), ErrorCode.PARAMETER_MISSING,
@@ -241,7 +255,17 @@ public class ConfigForm implements Serializable {
         } else if (StringUtils.isBlank(group)) {
             throw new NacosApiException(HttpStatus.BAD_REQUEST.value(), ErrorCode.PARAMETER_MISSING,
                     "Required parameter 'group' type String is not present");
-        } else if (StringUtils.isBlank(content)) {
+        }
+    }
+    
+    /**
+     * Validate form parameter and include validate `content` parameters.
+     *
+     * @throws NacosApiException NacosApiException
+     */
+    public void validateWithContent() throws NacosApiException {
+        validate();
+        if (StringUtils.isBlank(content)) {
             throw new NacosApiException(HttpStatus.BAD_REQUEST.value(), ErrorCode.PARAMETER_MISSING,
                     "Required parameter 'content' type String is not present");
         }

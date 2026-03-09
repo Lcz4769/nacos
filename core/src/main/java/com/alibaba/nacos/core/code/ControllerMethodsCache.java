@@ -36,7 +36,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
 
-import javax.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequest;
 import java.lang.reflect.Method;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -227,14 +227,9 @@ public class ControllerMethodsCache {
         RequestMappingInfo requestMappingInfo = new RequestMappingInfo();
         requestMappingInfo.setPathRequestCondition(new PathRequestCondition(urlKey));
         requestMappingInfo.setParamRequestCondition(new ParamRequestCondition(requestParam));
-        List<RequestMappingInfo> requestMappingInfos = urlLookup.get(urlKey);
-        if (requestMappingInfos == null) {
-            urlLookup.putIfAbsent(urlKey, new ArrayList<>());
-            requestMappingInfos = urlLookup.get(urlKey);
-            // For issue #4701.
-            String urlKeyBackup = urlKey + "/";
-            urlLookup.putIfAbsent(urlKeyBackup, requestMappingInfos);
-        }
+        List<RequestMappingInfo> requestMappingInfos = urlLookup.computeIfAbsent(urlKey, k -> new ArrayList<>());
+        // For issue #4701.
+        urlLookup.computeIfAbsent(urlKey + "/", k -> requestMappingInfos);
         requestMappingInfos.add(requestMappingInfo);
         methods.put(requestMappingInfo, method);
     }

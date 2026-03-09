@@ -24,7 +24,8 @@ import org.springframework.context.ConfigurableApplicationContext;
 
 import java.io.BufferedReader;
 import java.io.File;
-import java.io.FileReader;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.io.IOException;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -54,6 +55,15 @@ public class PropertyUtil implements ApplicationContextInitializer<ConfigurableA
      * Whether to enable capacity management.
      */
     private static boolean isManageCapacity = true;
+    
+    /**
+     * gray compatible model.
+     */
+    private static boolean grayCompatibleModel = true;
+    
+    public static final ThreadLocal<Boolean> GRAY_MIGRATE_FLAG = ThreadLocal.withInitial(() -> false);
+    
+    public static final ThreadLocal<Boolean> CONFIG_MIGRATE_FLAG = ThreadLocal.withInitial(() -> false);
     
     /**
      * Whether to enable the limit check function of capacity management, including the upper limit of configuration
@@ -102,12 +112,12 @@ public class PropertyUtil implements ApplicationContextInitializer<ConfigurableA
     private static int correctUsageDelay = 10 * 60;
     
     private static boolean dumpChangeOn = true;
-
+    
     /**
      * The number of days to retain the configuration history, the default is 30 days.
      */
     private static int configRententionDays = 30;
-
+    
     /**
      * dumpChangeWorkerInterval, default 30 seconds.
      */
@@ -233,6 +243,19 @@ public class PropertyUtil implements ApplicationContextInitializer<ConfigurableA
         PropertyUtil.defaultMaxAggrCount = defaultMaxAggrCount;
     }
     
+    /**
+     * control whether persist beta and tag to old model.
+     *
+     * @return
+     */
+    public static boolean isGrayCompatibleModel() {
+        return grayCompatibleModel;
+    }
+    
+    public static void setGrayCompatibleModel(boolean grayCompatibleModel) {
+        PropertyUtil.grayCompatibleModel = grayCompatibleModel;
+    }
+    
     public static int getDefaultMaxAggrSize() {
         return defaultMaxAggrSize;
     }
@@ -248,13 +271,13 @@ public class PropertyUtil implements ApplicationContextInitializer<ConfigurableA
     public static void setCorrectUsageDelay(int correctUsageDelay) {
         PropertyUtil.correctUsageDelay = correctUsageDelay;
     }
-
+    
     public static int getConfigRententionDays() {
         return configRententionDays;
     }
-
+    
     private void setConfigRententionDays() {
-        String val =  getProperty(PropertiesConstant.CONFIG_RENTENTION_DAYS);
+        String val = getProperty(PropertiesConstant.CONFIG_RENTENTION_DAYS);
         if (null != val) {
             int tmp = 0;
             try {
@@ -267,7 +290,7 @@ public class PropertyUtil implements ApplicationContextInitializer<ConfigurableA
             }
         }
     }
-
+    
     public static boolean isStandaloneMode() {
         return EnvUtil.getStandaloneMode();
     }
@@ -305,6 +328,8 @@ public class PropertyUtil implements ApplicationContextInitializer<ConfigurableA
             setDumpChangeOn(getBoolean(PropertiesConstant.DUMP_CHANGE_ON, dumpChangeOn));
             setDumpChangeWorkerInterval(
                     getLong(PropertiesConstant.DUMP_CHANGE_WORKER_INTERVAL, dumpChangeWorkerInterval));
+            setGrayCompatibleModel(getBoolean(PropertiesConstant.GRAY_CAPATIBEL_MODEL, grayCompatibleModel));
+            
         } catch (Exception e) {
             LOGGER.error("read application.properties failed", e);
             throw e;
@@ -361,17 +386,17 @@ public class PropertyUtil implements ApplicationContextInitializer<ConfigurableA
     }
     
     static int initAllDumpPageSize() {
-        long memLimitMB = getMemLimitMB();
+        long memLimitMb = getMemLimitMb();
         
         //512MB->50 Page Size
-        int pageSize = (int) ((float) memLimitMB / PAGE_MEMORY_DIVIDE_MB) * MIN_DUMP_PAGE;
+        int pageSize = (int) ((float) memLimitMb / PAGE_MEMORY_DIVIDE_MB) * MIN_DUMP_PAGE;
         pageSize = Math.max(pageSize, MIN_DUMP_PAGE);
         pageSize = Math.min(pageSize, MAX_DUMP_PAGE);
-        LOGGER.info("All dump page size is set to {} according to mem limit {} MB", pageSize, memLimitMB);
+        LOGGER.info("All dump page size is set to {} according to mem limit {} MB", pageSize, memLimitMb);
         return pageSize;
     }
     
-    public static long getMemLimitMB() {
+    public static long getMemLimitMb() {
         Optional<Long> memoryLimit = findMemoryLimitFromFile();
         if (memoryLimit.isPresent()) {
             return memoryLimit.get();
@@ -388,7 +413,7 @@ public class PropertyUtil implements ApplicationContextInitializer<ConfigurableA
                     "/sys/fs/cgroup/memory/memory.limit_in_bytes");
         }
         File file = new File(limitMemoryFile);
-        try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
+        try (BufferedReader reader = Files.newBufferedReader(file.toPath(), StandardCharsets.UTF_8)) {
             long memoryLimit = Long.parseLong(reader.readLine().trim());
             return Optional.of(memoryLimit / 1024L / 1024L);
         } catch (IOException | NumberFormatException ignored) {

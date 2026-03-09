@@ -36,14 +36,14 @@ class AbilityControlManagerTest {
     @BeforeEach
     void inject() {
         Map<String, Boolean> newTable = new HashMap<>();
-        newTable.put(AbilityKey.SERVER_TEST_1.getName(), true);
+        newTable.put(AbilityKey.SERVER_FUZZY_WATCH.getName(), true);
         serverAbilityControlManager.setCurrentSupportingAbility(newTable);
     }
     
     @Test
     void testCurrentNodeAbility() {
         Set<String> keySet = serverAbilityControlManager.getCurrentNodeAbilities(AbilityMode.SERVER).keySet();
-        // diable all
+        // disable all
         keySet.forEach(key -> serverAbilityControlManager.disableCurrentNodeAbility(AbilityKey.getEnum(AbilityMode.SERVER, key)));
         // get all
         keySet.forEach(key -> {

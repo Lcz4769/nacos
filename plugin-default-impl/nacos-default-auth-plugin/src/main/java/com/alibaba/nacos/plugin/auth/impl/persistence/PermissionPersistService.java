@@ -16,7 +16,7 @@
 
 package com.alibaba.nacos.plugin.auth.impl.persistence;
 
-import com.alibaba.nacos.persistence.model.Page;
+import com.alibaba.nacos.api.model.Page;
 
 /**
  * Permission CRUD service.
@@ -24,7 +24,6 @@ import com.alibaba.nacos.persistence.model.Page;
  * @author nkorange
  * @since 1.2.0
  */
-@SuppressWarnings("PMD.AbstractMethodOrInterfaceMethodMustUseJavadocRule")
 public interface PermissionPersistService {
 
     /**

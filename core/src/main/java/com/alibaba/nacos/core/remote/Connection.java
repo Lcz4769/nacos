@@ -16,7 +16,9 @@
 
 package com.alibaba.nacos.core.remote;
 
+import com.alibaba.nacos.api.exception.NacosException;
 import com.alibaba.nacos.api.remote.Requester;
+import com.alibaba.nacos.api.remote.request.Request;
 
 import java.util.Map;
 
@@ -26,7 +28,6 @@ import java.util.Map;
  * @author liuzunfei
  * @version $Id: Connection.java, v 0.1 2020年07月13日 7:08 PM liuzunfei Exp $
  */
-@SuppressWarnings("PMD.AbstractClassShouldStartWithAbstractNamingRule")
 public abstract class Connection implements Requester {
     
     private boolean traced = false;
@@ -85,6 +86,14 @@ public abstract class Connection implements Requester {
     public ConnectionMeta getMetaInfo() {
         return metaInfo;
     }
+    
+    /**
+     * Send request to remote.
+     *
+     * @param request request.
+     * @throws NacosException nacos exception.
+     */
+    public abstract void sendRequestNoAck(Request request) throws NacosException;
     
     @Override
     public String toString() {

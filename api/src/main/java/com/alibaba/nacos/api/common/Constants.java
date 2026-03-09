@@ -35,6 +35,8 @@ public class Constants {
     
     public static final String CLIENT_VERSION_KEY = "ClientVersion";
     
+    public static final String CLIENT_IP = "ClientIp";
+    
     public static final String UNKNOWN_APP = "UnknownApp";
     
     public static final String DEFAULT_DOMAINNAME = "commonconfig.config-host.taobao.com";
@@ -48,8 +50,12 @@ public class Constants {
     public static final String TENANT = "tenant";
 
     public static final String GROUP = "group";
-
+    
+    public static final String GROUP_NAME = "groupName";
+    
     public static final String NAMESPACE_ID = "namespaceId";
+
+    public static final String TARGET_NAMESPACE_ID = "targetNamespaceId";
 
     public static final String LAST_MODIFIED = "Last-Modified";
     
@@ -252,6 +258,8 @@ public class Constants {
      */
     public static final String DEFAULT_USE_RAM_INFO_PARSING = "true";
     
+    public static final String CLIENT_MODULE_TYPE = "clientModuleType";
+    
     /**
      * The constants in config directory.
      */
@@ -270,6 +278,75 @@ public class Constants {
         public static final String NAMING_MODULE = "naming";
         
         public static final String CMDB_CONTEXT_TYPE = "CMDB";
+    }
+    
+    public static final String FUZZY_WATCH_PATTERN_SPLITTER = ">>";
+    
+    /**
+     * fuzzy watch sync type of watch init notify.
+     */
+    public static final String FUZZY_WATCH_INIT_NOTIFY = "FUZZY_WATCH_INIT_NOTIFY";
+    
+    /**
+     * fuzzy watch sync type of watch init notify finish.
+     */
+    public static final String FINISH_FUZZY_WATCH_INIT_NOTIFY = "FINISH_FUZZY_WATCH_INIT_NOTIFY";
+    
+    /**
+     * fuzzy watch sync type of watch diff sync notify.
+     */
+    public static final String FUZZY_WATCH_DIFF_SYNC_NOTIFY = "FUZZY_WATCH_DIFF_SYNC_NOTIFY";
+    
+    /**
+     * fuzzy watch sync type of watch resource changed.
+     */
+    public static final String FUZZY_WATCH_RESOURCE_CHANGED = "FUZZY_WATCH_RESOURCE_CHANGED";
+    
+    /**
+     * watch type of watch.
+     */
+    public static final String WATCH_TYPE_WATCH = "WATCH";
+    
+    /**
+     * watch type of cancel watch.
+     */
+    public static final String WATCH_TYPE_CANCEL_WATCH = "CANCEL_WATCH";
+    
+    /**
+     * The constants in config fuzzy watch changed type directory.
+     */
+    public static class ConfigChangedType {
+        
+        public static final String ADD_CONFIG = "ADD_CONFIG";
+        
+        public static final String DELETE_CONFIG = "DELETE_CONFIG";
+        
+        public static final String CONFIG_CHANGED = "CONFIG_CHANGED";
+    
+    }
+    
+    /**
+     * The constants in naming fuzzy watch changed type directory.
+     */
+    public static class ServiceChangedType {
+        
+        public static final String ADD_SERVICE = "ADD_SERVICE";
+        
+        public static final String DELETE_SERVICE = "DELETE_SERVICE";
+        
+        public static final String INSTANCE_CHANGED = "INSTANCE_CHANGED";
+        
+        public static final String HEART_BEAT = "HEART_BEAT";
+        
+    }
+    
+    /**
+     * The constants in lock directory.
+     */
+    public static class Lock {
+        
+        public static final String LOCK_MODULE = "lock";
+        
     }
     
     /**
@@ -292,5 +369,13 @@ public class Constants {
         public static final int FIND_DATASOURCE_ERROR_CODE = 102;
         
         public static final int FIND_TABLE_ERROR_CODE = 103;
+    }
+    
+    /**
+     * The constants in AI directory.
+     */
+    public static class AI {
+        
+        public static final String AI_MODULE = "ai";
     }
 }

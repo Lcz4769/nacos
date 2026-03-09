@@ -16,7 +16,7 @@
 
 package com.alibaba.nacos.plugin.auth.impl.persistence;
 
-import com.alibaba.nacos.persistence.model.Page;
+import com.alibaba.nacos.api.model.Page;
 
 import java.util.List;
 
@@ -26,7 +26,6 @@ import java.util.List;
  * @author nkorange
  * @since 1.2.0
  */
-@SuppressWarnings("PMD.AbstractMethodOrInterfaceMethodMustUseJavadocRule")
 public interface UserPersistService {
 
     /**

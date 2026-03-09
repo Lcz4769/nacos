@@ -19,8 +19,8 @@ package com.alibaba.nacos.client.naming.cache;
 import com.alibaba.nacos.api.common.Constants;
 import com.alibaba.nacos.api.naming.pojo.Instance;
 import com.alibaba.nacos.api.naming.pojo.ServiceInfo;
-import com.alibaba.nacos.client.naming.utils.CollectionUtils;
 import com.alibaba.nacos.client.utils.ConcurrentDiskUtil;
+import com.alibaba.nacos.common.utils.CollectionUtils;
 import com.alibaba.nacos.common.utils.JacksonUtils;
 import com.alibaba.nacos.common.utils.StringUtils;
 
@@ -115,7 +115,6 @@ public class DiskCache {
      * @return Service info
      * @throws UnsupportedEncodingException if the file is not encoded in UTF-8
      */
-    @SuppressWarnings("PMD.UndefineMagicConstantRule")
     public static Map<String, ServiceInfo> parseServiceInfoFromCache(File file) throws UnsupportedEncodingException {
         Map<String, ServiceInfo> result = new HashMap<>(1);
         String fileName = URLDecoder.decode(file.getName(), "UTF-8");

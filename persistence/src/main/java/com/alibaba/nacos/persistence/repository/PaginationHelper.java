@@ -16,7 +16,7 @@
 
 package com.alibaba.nacos.persistence.repository;
 
-import com.alibaba.nacos.persistence.model.Page;
+import com.alibaba.nacos.api.model.Page;
 import com.alibaba.nacos.plugin.datasource.model.MapperResult;
 import org.springframework.jdbc.core.RowMapper;
 
@@ -25,7 +25,6 @@ import org.springframework.jdbc.core.RowMapper;
  *
  * @author <a href="mailto:liaochuntao@live.com">liaochuntao</a>
  */
-@SuppressWarnings("PMD.AbstractMethodOrInterfaceMethodMustUseJavadocRule")
 public interface PaginationHelper<E> {
     
     Page<E> fetchPage(final String sqlCountRows, final String sqlFetchRows, final Object[] args, final int pageNo,

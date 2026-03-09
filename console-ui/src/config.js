@@ -27,12 +27,17 @@ module.exports = {
       {
         key: 'home', // 用作顶部菜单的选中
         text: 'HOME',
-        link: 'https://nacos.io/en-us/index.html',
+        link: 'https://https://nacos.io/en/',
+      },
+      {
+        key: 'mcp',
+        text: 'MCP Marketplace',
+        link: 'https://mcp.nacos.io/',
       },
       {
         key: 'docs',
         text: 'DOCS',
-        link: 'https://nacos.io/en/docs/latest/what-is-nacos/',
+        link: 'https://nacos.io/en/docs/latest/overview/',
       },
       {
         key: 'blog',
@@ -42,7 +47,7 @@ module.exports = {
       {
         key: 'community',
         text: 'COMMUNITY',
-        link: 'https://nacos.io/en/news/',
+        link: 'https://nacos.io/en/blog/community/',
       },
       {
         key: 'enterprise',
@@ -92,12 +97,17 @@ module.exports = {
       {
         key: 'home',
         text: '首页',
-        link: 'https://nacos.io/zh-cn/',
+        link: 'https://nacos.io/',
+      },
+      {
+        key: 'mcp',
+        text: 'MCP市场',
+        link: 'https://mcp.nacos.io/',
       },
       {
         key: 'docs',
         text: '文档',
-        link: 'https://nacos.io/docs/latest/what-is-nacos/',
+        link: 'https://nacos.io/docs/latest/overview/',
       },
       {
         key: 'blog',
@@ -107,7 +117,7 @@ module.exports = {
       {
         key: 'community',
         text: '社区',
-        link: 'https://nacos.io/news/',
+        link: 'https://nacos.io/blog/community/',
       },
       {
         key: 'enterprise',

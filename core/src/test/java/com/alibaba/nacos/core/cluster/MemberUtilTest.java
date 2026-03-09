@@ -16,6 +16,7 @@
 
 package com.alibaba.nacos.core.cluster;
 
+import com.alibaba.nacos.api.common.NodeState;
 import com.alibaba.nacos.api.exception.NacosException;
 import com.alibaba.nacos.sys.env.EnvUtil;
 import org.junit.jupiter.api.AfterEach;
@@ -187,6 +188,20 @@ class MemberUtilTest {
         input.add(member);
         Set<Member> actual = MemberUtil.selectTargetMembers(input, member1 -> member1.getIp().equals(IP));
         assertEquals(1, actual.size());
+    }
+
+    @Test
+    void testSimpleMembers() {
+        Collection<Member> members = new HashSet<>();
+        members.add(originalMember);
+        Member other = buildMember();
+        other.setIp("2.2.2.2");
+        other.setPort(8849);
+        members.add(other);
+        java.util.List<String> addresses = MemberUtil.simpleMembers(members);
+        assertEquals(2, addresses.size());
+        assertEquals(IP + ":" + PORT, addresses.get(0));
+        assertEquals("2.2.2.2:8849", addresses.get(1));
     }
     
     @Test

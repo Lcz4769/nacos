@@ -16,8 +16,10 @@
 
 package com.alibaba.nacos.config.server.service.repository.embedded;
 
+import com.alibaba.nacos.api.config.model.SameConfigPolicy;
 import com.alibaba.nacos.api.exception.NacosException;
 import com.alibaba.nacos.api.exception.runtime.NacosRuntimeException;
+import com.alibaba.nacos.api.model.Page;
 import com.alibaba.nacos.common.constant.Symbols;
 import com.alibaba.nacos.common.notify.NotifyCenter;
 import com.alibaba.nacos.common.utils.MD5Utils;
@@ -33,16 +35,16 @@ import com.alibaba.nacos.config.server.model.ConfigInfo;
 import com.alibaba.nacos.config.server.model.ConfigInfoStateWrapper;
 import com.alibaba.nacos.config.server.model.ConfigInfoWrapper;
 import com.alibaba.nacos.config.server.model.ConfigOperateResult;
-import com.alibaba.nacos.config.server.model.SameConfigPolicy;
 import com.alibaba.nacos.config.server.service.repository.ConfigInfoPersistService;
 import com.alibaba.nacos.config.server.service.repository.HistoryConfigInfoPersistService;
 import com.alibaba.nacos.config.server.service.sql.EmbeddedStorageContextUtils;
+import com.alibaba.nacos.config.server.utils.ConfigExtInfoUtil;
+import com.alibaba.nacos.config.server.utils.LogUtil;
 import com.alibaba.nacos.config.server.utils.ParamUtils;
 import com.alibaba.nacos.core.distributed.id.IdGeneratorManager;
 import com.alibaba.nacos.persistence.configuration.condition.ConditionOnEmbeddedStorage;
 import com.alibaba.nacos.persistence.datasource.DataSourceService;
 import com.alibaba.nacos.persistence.datasource.DynamicDataSource;
-import com.alibaba.nacos.persistence.model.Page;
 import com.alibaba.nacos.persistence.model.event.DerbyImportEvent;
 import com.alibaba.nacos.persistence.repository.PaginationHelper;
 import com.alibaba.nacos.persistence.repository.embedded.EmbeddedPaginationHelperImpl;
@@ -73,6 +75,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.stream.Collectors;
 
@@ -82,6 +85,7 @@ import static com.alibaba.nacos.config.server.service.repository.ConfigRowMapper
 import static com.alibaba.nacos.config.server.service.repository.ConfigRowMapperInjector.CONFIG_INFO_STATE_WRAPPER_ROW_MAPPER;
 import static com.alibaba.nacos.config.server.service.repository.ConfigRowMapperInjector.CONFIG_INFO_WRAPPER_ROW_MAPPER;
 import static com.alibaba.nacos.config.server.utils.LogUtil.DEFAULT_LOG;
+import static com.alibaba.nacos.config.server.utils.PropertyUtil.CONFIG_MIGRATE_FLAG;
 import static com.alibaba.nacos.persistence.repository.RowMapperManager.MAP_ROW_MAPPER;
 
 /**
@@ -89,10 +93,12 @@ import static com.alibaba.nacos.persistence.repository.RowMapperManager.MAP_ROW_
  *
  * @author lixiaoshuang
  */
-@SuppressWarnings({"PMD.MethodReturnWrapperTypeRule", "checkstyle:linelength"})
+@SuppressWarnings("checkstyle:linelength")
 @Conditional(value = ConditionOnEmbeddedStorage.class)
 @Service("embeddedConfigInfoPersistServiceImpl")
 public class EmbeddedConfigInfoPersistServiceImpl implements ConfigInfoPersistService {
+    
+    public static final String SPOT = ".";
     
     private static final String RESOURCE_CONFIG_INFO_ID = "config-info-id";
     
@@ -122,15 +128,15 @@ public class EmbeddedConfigInfoPersistServiceImpl implements ConfigInfoPersistSe
     
     private static final String TENANT = "tenant_id";
     
-    public static final String SPOT = ".";
-    
-    private DataSourceService dataSourceService;
+    private static final Set<String> SYSTEM_GROUP = Set.of("mcp-server", "mcp-server-versions", "mcp-tools");
     
     private final DatabaseOperate databaseOperate;
     
     private final IdGeneratorManager idGeneratorManager;
     
     MapperManager mapperManager;
+    
+    private DataSourceService dataSourceService;
     
     private HistoryConfigInfoPersistService historyConfigInfoPersistService;
     
@@ -153,7 +159,6 @@ public class EmbeddedConfigInfoPersistServiceImpl implements ConfigInfoPersistSe
         this.mapperManager = MapperManager.instance(isDataSourceLogEnable);
         this.historyConfigInfoPersistService = historyConfigInfoPersistService;
         NotifyCenter.registerToSharePublisher(DerbyImportEvent.class);
-        
     }
     
     @Override
@@ -163,6 +168,10 @@ public class EmbeddedConfigInfoPersistServiceImpl implements ConfigInfoPersistSe
     
     @Override
     public String generateLikeArgument(String s) {
+        String underscore = "_";
+        if (s.contains(underscore)) {
+            s = s.replaceAll(underscore, "\\\\_");
+        }
         String fuzzySearchSign = "\\*";
         String sqlLikePercentSign = "%";
         if (s.contains(PATTERN_STR)) {
@@ -217,13 +226,52 @@ public class EmbeddedConfigInfoPersistServiceImpl implements ConfigInfoPersistSe
             
             addConfigTagsRelation(configId, configTags, configInfo.getDataId(), configInfo.getGroup(),
                     configInfo.getTenant());
-
             Timestamp now = new Timestamp(System.currentTimeMillis());
-            historyConfigInfoPersistService.insertConfigHistoryAtomic(hisId, configInfo, srcIp, srcUser, now, "I");
+            if (!CONFIG_MIGRATE_FLAG.get()) {
+                historyConfigInfoPersistService.insertConfigHistoryAtomic(hisId, configInfo, srcIp, srcUser, now, "I",
+                        Constants.FORMAL, null,
+                        ConfigExtInfoUtil.getExtraInfoFromAdvanceInfoMap(configAdvanceInfo, srcUser));
+            }
             EmbeddedStorageContextUtils.onModifyConfigInfo(configInfo, srcIp, now);
-            databaseOperate.blockUpdate(consumer);
+            boolean result = databaseOperate.blockUpdate(consumer);
+            if (!result) {
+                return new ConfigOperateResult(false);
+            }
             return getConfigInfoOperateResult(configInfo.getDataId(), configInfo.getGroup(), tenantTmp);
             
+        } finally {
+            EmbeddedStorageContextHolder.cleanAllContext();
+        }
+    }
+    
+    @Override
+    public ConfigOperateResult updateConfigInfoMetadata(String dataId, String group, String tenant, String configTags,
+            String description) throws NacosException {
+        try {
+            ConfigInfoWrapper configInfoWrapper = findConfigInfo(dataId, group, tenant);
+            if (configInfoWrapper == null) {
+                throw new NacosException(NacosException.NOT_FOUND,
+                        "config is not found for dataId=" + dataId + ", group=" + group);
+            }
+            Long configId = configInfoWrapper.getId();
+            Timestamp now = new Timestamp(System.currentTimeMillis());
+            if (description != null) {
+                ConfigInfoMapper configInfoMapper = mapperManager.findMapper(dataSourceService.getDataSourceType(),
+                        TableConstant.CONFIG_INFO);
+                final String sql = configInfoMapper.update(Arrays.asList("gmt_modified@NOW()", "c_desc"),
+                        Arrays.asList("id"));
+                
+                final Object[] args = new Object[] {description, configId};
+                EmbeddedStorageContextHolder.addSqlContext(sql, args);
+            }
+            if (configTags != null) {
+                removeTagByIdAtomic(configId);
+                addConfigTagsRelation(configId, configTags, configInfoWrapper.getDataId(), configInfoWrapper.getGroup(),
+                        configInfoWrapper.getTenant());
+            }
+            EmbeddedStorageContextUtils.onModifyConfigInfo(configInfoWrapper, null, now);
+            databaseOperate.blockUpdate();
+            return getConfigInfoOperateResult(configInfoWrapper.getDataId(), configInfoWrapper.getGroup(), tenant);
         } finally {
             EmbeddedStorageContextHolder.cleanAllContext();
         }
@@ -266,12 +314,12 @@ public class EmbeddedConfigInfoPersistServiceImpl implements ConfigInfoPersistSe
                 configInfo.getEncryptedDataKey() == null ? StringUtils.EMPTY : configInfo.getEncryptedDataKey();
         ConfigInfoMapper configInfoMapper = mapperManager.findMapper(dataSourceService.getDataSourceType(),
                 TableConstant.CONFIG_INFO);
-
+        
         final String sql = configInfoMapper.insert(
                 Arrays.asList("id", "data_id", "group_id", "tenant_id", "app_name", "content", "md5", "src_ip",
-                        "src_user", "gmt_create@NOW()", "gmt_modified@NOW()", "c_desc", "c_use", "effect",
-                        "type", "c_schema", "encrypted_data_key"));
-        final Object[] args = new Object[]{id, configInfo.getDataId(), configInfo.getGroup(), tenantTmp, appNameTmp,
+                        "src_user", "gmt_create@NOW()", "gmt_modified@NOW()", "c_desc", "c_use", "effect", "type",
+                        "c_schema", "encrypted_data_key"));
+        final Object[] args = new Object[] {id, configInfo.getDataId(), configInfo.getGroup(), tenantTmp, appNameTmp,
                 configInfo.getContent(), md5Tmp, srcIp, srcUser, desc, use, effect, type, schema, encryptedDataKey};
         EmbeddedStorageContextHolder.addSqlContext(sql, args);
         return id;
@@ -400,15 +448,18 @@ public class EmbeddedConfigInfoPersistServiceImpl implements ConfigInfoPersistSe
     public void removeConfigInfo(final String dataId, final String group, final String tenant, final String srcIp,
             final String srcUser) {
         final Timestamp time = new Timestamp(System.currentTimeMillis());
-        ConfigInfo configInfo = findConfigInfo(dataId, group, tenant);
-        if (Objects.nonNull(configInfo)) {
+        ConfigAllInfo oldConfigAllInfo = findConfigAllInfo(dataId, group, tenant);
+        if (Objects.nonNull(oldConfigAllInfo)) {
             try {
                 String tenantTmp = StringUtils.isBlank(tenant) ? StringUtils.EMPTY : tenant;
                 
                 removeConfigInfoAtomic(dataId, group, tenantTmp, srcIp, srcUser);
-                removeTagByIdAtomic(configInfo.getId());
-                historyConfigInfoPersistService.insertConfigHistoryAtomic(configInfo.getId(), configInfo, srcIp,
-                        srcUser, time, "D");
+                removeTagByIdAtomic(oldConfigAllInfo.getId());
+                if (!CONFIG_MIGRATE_FLAG.get()) {
+                    historyConfigInfoPersistService.insertConfigHistoryAtomic(oldConfigAllInfo.getId(),
+                            oldConfigAllInfo, srcIp, srcUser, time, "D", Constants.FORMAL, null,
+                            ConfigExtInfoUtil.getExtInfoFromAllInfo(oldConfigAllInfo));
+                }
                 
                 EmbeddedStorageContextUtils.onDeleteConfigInfo(tenantTmp, group, dataId, srcIp, time);
                 
@@ -423,7 +474,7 @@ public class EmbeddedConfigInfoPersistServiceImpl implements ConfigInfoPersistSe
     }
     
     @Override
-    public List<ConfigInfo> removeConfigInfoByIds(final List<Long> ids, final String srcIp, final String srcUser) {
+    public List<ConfigAllInfo> removeConfigInfoByIds(final List<Long> ids, final String srcIp, final String srcUser) {
         if (CollectionUtils.isEmpty(ids)) {
             return null;
         }
@@ -431,23 +482,24 @@ public class EmbeddedConfigInfoPersistServiceImpl implements ConfigInfoPersistSe
         final Timestamp time = new Timestamp(System.currentTimeMillis());
         try {
             String idsStr = StringUtils.join(ids, StringUtils.COMMA);
-            List<ConfigInfo> configInfoList = findConfigInfosByIds(idsStr);
-            if (CollectionUtils.isNotEmpty(configInfoList)) {
+            List<ConfigAllInfo> oldConfigAllInfoList = findAllConfigInfo4Export(null, null, null, null, ids);
+            if (CollectionUtils.isNotEmpty(oldConfigAllInfoList)) {
                 removeConfigInfoByIdsAtomic(idsStr);
-                for (ConfigInfo configInfo : configInfoList) {
-                    removeTagByIdAtomic(configInfo.getId());
-                    historyConfigInfoPersistService.insertConfigHistoryAtomic(configInfo.getId(), configInfo, srcIp,
-                            srcUser, time, "D");
+                for (ConfigAllInfo configAllInfo : oldConfigAllInfoList) {
+                    removeTagByIdAtomic(configAllInfo.getId());
+                    historyConfigInfoPersistService.insertConfigHistoryAtomic(configAllInfo.getId(), configAllInfo,
+                            srcIp, srcUser, time, "D", Constants.FORMAL, null,
+                            ConfigExtInfoUtil.getExtInfoFromAllInfo(configAllInfo));
                 }
             }
             
-            EmbeddedStorageContextUtils.onBatchDeleteConfigInfo(configInfoList);
+            EmbeddedStorageContextUtils.onBatchDeleteConfigInfo(oldConfigAllInfoList);
             boolean result = databaseOperate.update(EmbeddedStorageContextHolder.getCurrentSqlContext());
             if (!result) {
                 throw new NacosConfigException("Failed to config batch deletion");
             }
             
-            return configInfoList;
+            return oldConfigAllInfoList;
         } finally {
             EmbeddedStorageContextHolder.cleanAllContext();
         }
@@ -496,15 +548,22 @@ public class EmbeddedConfigInfoPersistServiceImpl implements ConfigInfoPersistSe
     public ConfigOperateResult updateConfigInfo(final ConfigInfo configInfo, final String srcIp, final String srcUser,
             final Map<String, Object> configAdvanceInfo) {
         try {
-            ConfigInfo oldConfigInfo = findConfigInfo(configInfo.getDataId(), configInfo.getGroup(),
+            ConfigAllInfo oldConfigAllInfo = findConfigAllInfo(configInfo.getDataId(), configInfo.getGroup(),
                     configInfo.getTenant());
+            if (oldConfigAllInfo == null) {
+                if (LogUtil.FATAL_LOG.isErrorEnabled()) {
+                    LogUtil.FATAL_LOG.error("expected config info[dataid:{}, group:{}, tenent:{}] but not found.",
+                            configInfo.getDataId(), configInfo.getGroup(), configInfo.getTenant());
+                }
+                return new ConfigOperateResult(false);
+            }
             
             final String tenantTmp =
                     StringUtils.isBlank(configInfo.getTenant()) ? StringUtils.EMPTY : configInfo.getTenant();
             
-            oldConfigInfo.setTenant(tenantTmp);
+            oldConfigAllInfo.setTenant(tenantTmp);
             
-            String appNameTmp = oldConfigInfo.getAppName();
+            String appNameTmp = oldConfigAllInfo.getAppName();
             // If the appName passed by the user is not empty, the appName of the user is persisted;
             // otherwise, the appName of db is used. Empty string is required to clear appName
             if (configInfo.getAppName() == null) {
@@ -516,14 +575,16 @@ public class EmbeddedConfigInfoPersistServiceImpl implements ConfigInfoPersistSe
             String configTags = configAdvanceInfo == null ? null : (String) configAdvanceInfo.get("config_tags");
             if (configTags != null) {
                 // Delete all tags and recreate them
-                removeTagByIdAtomic(oldConfigInfo.getId());
-                addConfigTagsRelation(oldConfigInfo.getId(), configTags, configInfo.getDataId(), configInfo.getGroup(),
-                        configInfo.getTenant());
+                removeTagByIdAtomic(oldConfigAllInfo.getId());
+                addConfigTagsRelation(oldConfigAllInfo.getId(), configTags, configInfo.getDataId(),
+                        configInfo.getGroup(), configInfo.getTenant());
             }
-            
             Timestamp time = new Timestamp(System.currentTimeMillis());
-            historyConfigInfoPersistService.insertConfigHistoryAtomic(oldConfigInfo.getId(), oldConfigInfo, srcIp,
-                    srcUser, time, "U");
+            if (!CONFIG_MIGRATE_FLAG.get()) {
+                historyConfigInfoPersistService.insertConfigHistoryAtomic(oldConfigAllInfo.getId(), oldConfigAllInfo,
+                        srcIp, srcUser, time, "U", Constants.FORMAL, null,
+                        ConfigExtInfoUtil.getExtInfoFromAllInfo(oldConfigAllInfo));
+            }
             EmbeddedStorageContextUtils.onModifyConfigInfo(configInfo, srcIp, time);
             databaseOperate.blockUpdate();
             return getConfigInfoOperateResult(configInfo.getDataId(), configInfo.getGroup(), tenantTmp);
@@ -536,15 +597,21 @@ public class EmbeddedConfigInfoPersistServiceImpl implements ConfigInfoPersistSe
     public ConfigOperateResult updateConfigInfoCas(final ConfigInfo configInfo, final String srcIp,
             final String srcUser, final Map<String, Object> configAdvanceInfo) {
         try {
-            ConfigInfo oldConfigInfo = findConfigInfo(configInfo.getDataId(), configInfo.getGroup(),
+            ConfigAllInfo oldConfigAllInfo = findConfigAllInfo(configInfo.getDataId(), configInfo.getGroup(),
                     configInfo.getTenant());
-            
+            if (oldConfigAllInfo == null) {
+                if (LogUtil.FATAL_LOG.isErrorEnabled()) {
+                    LogUtil.FATAL_LOG.error("expected config info[dataid:{}, group:{}, tenent:{}] but not found.",
+                            configInfo.getDataId(), configInfo.getGroup(), configInfo.getTenant());
+                }
+                return new ConfigOperateResult(false);
+            }
             final String tenantTmp =
                     StringUtils.isBlank(configInfo.getTenant()) ? StringUtils.EMPTY : configInfo.getTenant();
             
-            oldConfigInfo.setTenant(tenantTmp);
+            oldConfigAllInfo.setTenant(tenantTmp);
             
-            String appNameTmp = oldConfigInfo.getAppName();
+            String appNameTmp = oldConfigAllInfo.getAppName();
             // If the appName passed by the user is not empty, the appName of the user is persisted;
             // otherwise, the appName of db is used. Empty string is required to clear appName
             if (configInfo.getAppName() == null) {
@@ -556,14 +623,16 @@ public class EmbeddedConfigInfoPersistServiceImpl implements ConfigInfoPersistSe
             String configTags = configAdvanceInfo == null ? null : (String) configAdvanceInfo.get("config_tags");
             if (configTags != null) {
                 // Delete all tags and recreate them
-                removeTagByIdAtomic(oldConfigInfo.getId());
-                addConfigTagsRelation(oldConfigInfo.getId(), configTags, configInfo.getDataId(), configInfo.getGroup(),
-                        configInfo.getTenant());
+                removeTagByIdAtomic(oldConfigAllInfo.getId());
+                addConfigTagsRelation(oldConfigAllInfo.getId(), configTags, configInfo.getDataId(),
+                        configInfo.getGroup(), configInfo.getTenant());
             }
-
             Timestamp time = new Timestamp(System.currentTimeMillis());
-            historyConfigInfoPersistService.insertConfigHistoryAtomic(oldConfigInfo.getId(), oldConfigInfo, srcIp,
-                    srcUser, time, "U");
+            if (!CONFIG_MIGRATE_FLAG.get()) {
+                historyConfigInfoPersistService.insertConfigHistoryAtomic(oldConfigAllInfo.getId(), oldConfigAllInfo,
+                        srcIp, srcUser, time, "U", Constants.FORMAL, null,
+                        ConfigExtInfoUtil.getExtInfoFromAllInfo(oldConfigAllInfo));
+            }
             EmbeddedStorageContextUtils.onModifyConfigInfo(configInfo, srcIp, time);
             boolean success = databaseOperate.blockUpdate();
             if (success) {
@@ -588,15 +657,16 @@ public class EmbeddedConfigInfoPersistServiceImpl implements ConfigInfoPersistSe
         final String schema = configAdvanceInfo == null ? null : (String) configAdvanceInfo.get("schema");
         final String encryptedDataKey =
                 configInfo.getEncryptedDataKey() == null ? StringUtils.EMPTY : configInfo.getEncryptedDataKey();
-        ConfigInfoMapper configInfoMapper = mapperManager.findMapper(dataSourceService.getDataSourceType(),
-                TableConstant.CONFIG_INFO);
         MapperContext context = new MapperContext();
         context.putUpdateParameter(FieldConstant.CONTENT, configInfo.getContent());
         context.putUpdateParameter(FieldConstant.MD5, md5Tmp);
         context.putUpdateParameter(FieldConstant.SRC_IP, srcIp);
         context.putUpdateParameter(FieldConstant.SRC_USER, srcUser);
         context.putUpdateParameter(FieldConstant.APP_NAME, appNameTmp);
-        context.putUpdateParameter(FieldConstant.C_DESC, desc);
+        // Only update c_desc when desc is not null (empty string will also update)
+        if (desc != null) {
+            context.putUpdateParameter(FieldConstant.C_DESC, desc);
+        }
         context.putUpdateParameter(FieldConstant.C_USE, use);
         context.putUpdateParameter(FieldConstant.EFFECT, effect);
         context.putUpdateParameter(FieldConstant.TYPE, type);
@@ -606,9 +676,12 @@ public class EmbeddedConfigInfoPersistServiceImpl implements ConfigInfoPersistSe
         context.putWhereParameter(FieldConstant.GROUP_ID, configInfo.getGroup());
         context.putWhereParameter(FieldConstant.TENANT_ID, tenantTmp);
         context.putWhereParameter(FieldConstant.MD5, configInfo.getMd5());
+        ConfigInfoMapper configInfoMapper = mapperManager.findMapper(dataSourceService.getDataSourceType(),
+                TableConstant.CONFIG_INFO);
         MapperResult mapperResult = configInfoMapper.updateConfigInfoAtomicCas(context);
         
-        EmbeddedStorageContextHolder.addSqlContext(Boolean.TRUE, mapperResult.getSql(), mapperResult.getParamList().toArray());
+        EmbeddedStorageContextHolder.addSqlContext(Boolean.TRUE, mapperResult.getSql(),
+                mapperResult.getParamList().toArray());
         return getConfigInfoOperateResult(configInfo.getDataId(), configInfo.getGroup(), tenantTmp);
         
     }
@@ -626,18 +699,30 @@ public class EmbeddedConfigInfoPersistServiceImpl implements ConfigInfoPersistSe
         final String schema = configAdvanceInfo == null ? null : (String) configAdvanceInfo.get("schema");
         final String encryptedDataKey =
                 configInfo.getEncryptedDataKey() == null ? StringUtils.EMPTY : configInfo.getEncryptedDataKey();
-
+        
         ConfigInfoMapper configInfoMapper = mapperManager.findMapper(dataSourceService.getDataSourceType(),
                 TableConstant.CONFIG_INFO);
-        final String sql = configInfoMapper.update(
-                Arrays.asList("content", "md5", "src_ip", "src_user", "gmt_modified@NOW()", "app_name",
-                        "c_desc", "c_use", "effect", "type", "c_schema", "encrypted_data_key"),
-                Arrays.asList("data_id", "group_id", "tenant_id"));
-
-        final Object[] args = new Object[]{configInfo.getContent(), md5Tmp, srcIp, srcUser, appNameTmp, desc,
-                use, effect, type, schema, encryptedDataKey, configInfo.getDataId(), configInfo.getGroup(), tenantTmp};
-
-        EmbeddedStorageContextHolder.addSqlContext(sql, args);
+        
+        // Build update columns and parameters dynamically
+        List<String> updateColumns = new ArrayList<>(Arrays.asList("content", "md5", "src_ip", "src_user", 
+                "gmt_modified@NOW()", "app_name"));
+        List<Object> updateParams = new ArrayList<>(Arrays.asList(configInfo.getContent(), md5Tmp, srcIp, 
+                srcUser, appNameTmp));
+        
+        // Only update c_desc when desc is not null (empty string will also update)
+        if (desc != null) {
+            updateColumns.add("c_desc");
+            updateParams.add(desc);
+        }
+        updateColumns.addAll(Arrays.asList("c_use", "effect", "type", "c_schema", "encrypted_data_key"));
+        updateParams.addAll(Arrays.asList(use, effect, type, schema, encryptedDataKey));
+        
+        // Add where parameters
+        updateParams.addAll(Arrays.asList(configInfo.getDataId(), configInfo.getGroup(), tenantTmp));
+        
+        final String sql = configInfoMapper.update(updateColumns, Arrays.asList("data_id", "group_id", "tenant_id"));
+        
+        EmbeddedStorageContextHolder.addSqlContext(sql, updateParams.toArray());
     }
     
     @Override
@@ -719,6 +804,13 @@ public class EmbeddedConfigInfoPersistServiceImpl implements ConfigInfoPersistSe
             Pair<String, String> pair = EncryptionHandler.decryptHandler(configInfo.getDataId(),
                     configInfo.getEncryptedDataKey(), configInfo.getContent());
             configInfo.setContent(pair.getSecond());
+            
+            // 查询并设置标签信息
+            List<String> configTagList = selectTagByConfig(configInfo.getDataId(), configInfo.getGroup(), configInfo.getTenant());
+            if (CollectionUtils.isNotEmpty(configTagList)) {
+                String configTagsStr = String.join(",", configTagList);
+                configInfo.setConfigTags(configTagsStr);
+            }
         }
         
         return page;
@@ -802,7 +894,8 @@ public class EmbeddedConfigInfoPersistServiceImpl implements ConfigInfoPersistSe
         String tenantTmp = StringUtils.isBlank(tenant) ? StringUtils.EMPTY : tenant;
         final String appName = configAdvanceInfo == null ? null : (String) configAdvanceInfo.get("appName");
         final String content = configAdvanceInfo == null ? null : (String) configAdvanceInfo.get("content");
-        final String types = Optional.ofNullable(configAdvanceInfo).map(e -> (String) e.get(ParametersField.TYPES)).orElse(null);
+        final String types = Optional.ofNullable(configAdvanceInfo).map(e -> (String) e.get(ParametersField.TYPES))
+                .orElse(null);
         final String configTags = configAdvanceInfo == null ? null : (String) configAdvanceInfo.get("config_tags");
         MapperResult sqlCountRows;
         MapperResult sqlFetchRows;
@@ -829,6 +922,9 @@ public class EmbeddedConfigInfoPersistServiceImpl implements ConfigInfoPersistSe
         
         if (StringUtils.isNotBlank(configTags)) {
             String[] tagArr = configTags.split(",");
+            for (int i = 0; i < tagArr.length; i++) {
+                tagArr[i] = generateLikeArgument(tagArr[i]);
+            }
             context.putWhereParameter(FieldConstant.TAG_ARR, tagArr);
             ConfigTagsRelationMapper configTagsRelationMapper = mapperManager.findMapper(
                     dataSourceService.getDataSourceType(), TableConstant.CONFIG_TAGS_RELATION);
@@ -847,6 +943,13 @@ public class EmbeddedConfigInfoPersistServiceImpl implements ConfigInfoPersistSe
             Pair<String, String> pair = EncryptionHandler.decryptHandler(configInfo.getDataId(),
                     configInfo.getEncryptedDataKey(), configInfo.getContent());
             configInfo.setContent(pair.getSecond());
+            
+            // 查询并设置标签信息
+            List<String> configTagList = selectTagByConfig(configInfo.getDataId(), configInfo.getGroup(), configInfo.getTenant());
+            if (CollectionUtils.isNotEmpty(configTagList)) {
+                String configTagsStr = String.join(",", configTagList);
+                configInfo.setConfigTags(configTagsStr);
+            }
         }
         return page;
         
@@ -977,8 +1080,29 @@ public class EmbeddedConfigInfoPersistServiceImpl implements ConfigInfoPersistSe
         }
         
         MapperResult mapperResult = configInfoMapper.findAllConfigInfo4Export(context);
-        return databaseOperate.queryMany(mapperResult.getSql(), mapperResult.getParamList().toArray(),
-                CONFIG_ALL_INFO_ROW_MAPPER);
+        List<ConfigAllInfo> configAllInfos = databaseOperate.queryMany(mapperResult.getSql(),
+                mapperResult.getParamList().toArray(), CONFIG_ALL_INFO_ROW_MAPPER);
+        
+        if (CollectionUtils.isEmpty(configAllInfos)) {
+            return configAllInfos;
+        }
+        for (ConfigAllInfo configAllInfo : configAllInfos) {
+            List<String> configTagList = selectTagByConfig(configAllInfo.getDataId(), configAllInfo.getGroup(),
+                    configAllInfo.getTenant());
+            if (CollectionUtils.isNotEmpty(configTagList)) {
+                StringBuilder configTags = new StringBuilder();
+                for (String configTag : configTagList) {
+                    if (configTags.length() == 0) {
+                        configTags.append(configTag);
+                    } else {
+                        configTags.append(',').append(configTag);
+                    }
+                }
+                configAllInfo.setConfigTags(configTags.toString());
+            }
+        }
+        
+        return configAllInfos;
     }
     
     @Override

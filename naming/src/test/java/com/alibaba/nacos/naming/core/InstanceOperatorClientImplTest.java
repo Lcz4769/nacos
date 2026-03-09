@@ -17,6 +17,7 @@
 
 package com.alibaba.nacos.naming.core;
 
+import com.alibaba.nacos.api.common.Constants;
 import com.alibaba.nacos.api.exception.NacosException;
 import com.alibaba.nacos.api.naming.NamingResponseCode;
 import com.alibaba.nacos.api.naming.pojo.Instance;
@@ -36,7 +37,6 @@ import com.alibaba.nacos.naming.misc.SwitchDomain;
 import com.alibaba.nacos.naming.pojo.InstanceOperationInfo;
 import com.alibaba.nacos.naming.pojo.Subscriber;
 import com.alibaba.nacos.naming.pojo.instance.BeatInfoInstanceBuilder;
-import com.alibaba.nacos.naming.push.UdpPushService;
 import com.alibaba.nacos.naming.selector.SelectorManager;
 import com.alibaba.nacos.sys.env.EnvUtil;
 import com.alibaba.nacos.sys.utils.ApplicationUtils;
@@ -97,10 +97,7 @@ class InstanceOperatorClientImplTest {
     
     @Mock
     private SwitchDomain switchDomain;
-    
-    @Mock
-    private UdpPushService pushService;
-    
+
     @Mock
     private SelectorManager selectorManager;
     
@@ -134,21 +131,22 @@ class InstanceOperatorClientImplTest {
     @Test
     void testRegisterInstanceWithInvalidClusterName() throws NacosException {
         Throwable exception = assertThrows(NacosException.class, () -> {
-            
+
             Instance instance = new Instance();
             instance.setEphemeral(true);
             instance.setClusterName("cluster1,cluster2");
-            new InstanceOperatorClientImpl(null, null, null, null, null, null, null).registerInstance("ns-01", "serviceName01", instance);
+            new InstanceOperatorClientImpl(null, null, null, null, null, null).registerInstance("ns-01",
+                    "serviceName01", instance);
         });
-        assertTrue(exception.getMessage()
-                .contains("Instance 'clusterName' should be characters with only 0-9a-zA-Z-. (current: cluster1,cluster2)"));
+        assertTrue(exception.getMessage().contains(
+                "Instance 'clusterName' should be characters with only 0-9a-zA-Z-. (current: cluster1,cluster2)"));
     }
     
     @Test
-    void testRemoveInstance() {
+    void testRemoveInstance() throws NacosException {
         when(clientManager.contains(Mockito.anyString())).thenReturn(true);
         
-        instanceOperatorClient.removeInstance("A", "B", new Instance());
+        instanceOperatorClient.removeInstance("A", Constants.DEFAULT_GROUP, "B", new Instance());
         
         Mockito.verify(clientOperationService).deregisterInstance(Mockito.any(), Mockito.any(), Mockito.anyString());
     }
@@ -157,9 +155,20 @@ class InstanceOperatorClientImplTest {
     void testUpdateInstance() throws NacosException {
         Instance instance = new Instance();
         instance.setServiceName("C");
-        instanceOperatorClient.updateInstance("A", "C", instance);
+        instanceOperatorClient.updateInstance("A", Constants.DEFAULT_GROUP, "C", instance);
         
         Mockito.verify(metadataOperateService).updateInstanceMetadata(Mockito.any(), Mockito.any(), Mockito.any());
+    }
+    
+    @Test
+    void testUpdateInstanceWithNullValue() throws NacosException {
+        Instance instance = new Instance();
+        instance.setServiceName("C");
+        instance.getMetadata().put("nullValue", null);
+        instanceOperatorClient.updateInstance("A", Constants.DEFAULT_GROUP, "C", instance);
+        
+        Mockito.verify(metadataOperateService).updateInstanceMetadata(Mockito.any(), Mockito.any(),
+                Mockito.argThat(argument -> argument.getExtendData().isEmpty()));
     }
     
     @Test
@@ -174,26 +183,26 @@ class InstanceOperatorClientImplTest {
         serviceInfo.setHosts(instances);
         when(serviceStorage.getData(Mockito.any())).thenReturn(serviceInfo);
         
-        instanceOperatorClient.patchInstance("A", "B", new InstancePatchObject("C", "1.1.1.1", 8848));
+        instanceOperatorClient.patchInstance("A", Constants.DEFAULT_GROUP, "B",
+                new InstancePatchObject("C", "1.1.1.1", 8848));
         
-        Mockito.verify(metadataOperateService).updateInstanceMetadata(Mockito.any(), Mockito.anyString(), Mockito.any());
+        Mockito.verify(metadataOperateService)
+                .updateInstanceMetadata(Mockito.any(), Mockito.anyString(), Mockito.any());
     }
     
     @Test
     void testListInstance() {
-        when(pushService.canEnablePush(Mockito.anyString())).thenReturn(true);
-        
         ServiceInfo serviceInfo = new ServiceInfo();
         serviceInfo.setGroupName("DEFAULT_GROUP");
         serviceInfo.setName("B");
         when(serviceStorage.getData(Mockito.any())).thenReturn(serviceInfo);
-        
+
         ServiceMetadata metadata = new ServiceMetadata();
         when(metadataManager.getServiceMetadata(Mockito.any())).thenReturn(Optional.of(metadata));
-        
+
         Subscriber subscriber = new Subscriber("2.2.2.2", "", "app", "1.1.1.1", "A", "B", 8848);
-        instanceOperatorClient.listInstance("A", "B", subscriber, "C", true);
-        
+        instanceOperatorClient.listInstance("A", Constants.DEFAULT_GROUP, "B", subscriber, "C", true);
+
         Mockito.verify(clientOperationService).subscribeService(Mockito.any(), Mockito.any(), Mockito.anyString());
     }
     
@@ -206,7 +215,8 @@ class InstanceOperatorClientImplTest {
         
         RsInfo rsInfo = new RsInfo();
         rsInfo.setMetadata(new HashMap<>(1));
-        int res = instanceOperatorClient.handleBeat("A", "C", "1.1.1.1", 8848, "D", rsInfo, BeatInfoInstanceBuilder.newBuilder());
+        int res = instanceOperatorClient.handleBeat("A", "C", "1.1.1.1", 8848, "D", rsInfo,
+                BeatInfoInstanceBuilder.newBuilder());
         
         assertEquals(NamingResponseCode.OK, res);
     }
@@ -216,7 +226,8 @@ class InstanceOperatorClientImplTest {
         InstanceMetadata instanceMetadata = new InstanceMetadata();
         Map<String, Object> map = new HashMap<>(2);
         instanceMetadata.setExtendData(map);
-        when(metadataManager.getInstanceMetadata(Mockito.any(), Mockito.anyString())).thenReturn(Optional.of(instanceMetadata));
+        when(metadataManager.getInstanceMetadata(Mockito.any(), Mockito.anyString())).thenReturn(
+                Optional.of(instanceMetadata));
         
         when(switchDomain.getClientBeatInterval()).thenReturn(100L);
         
@@ -263,7 +274,8 @@ class InstanceOperatorClientImplTest {
         serviceInfo.setHosts(Collections.singletonList(instance));
         when(serviceStorage.getData(Mockito.any())).thenReturn(serviceInfo);
         
-        List<String> res = instanceOperatorClient.batchDeleteMetadata("A", new InstanceOperationInfo(), new HashMap<>());
+        List<String> res = instanceOperatorClient.batchDeleteMetadata("A", new InstanceOperationInfo(),
+                new HashMap<>());
         
         assertEquals(1, res.size());
     }

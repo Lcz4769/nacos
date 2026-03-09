@@ -22,10 +22,10 @@ import com.alibaba.nacos.config.server.model.ConfigHistoryInfo;
 import com.alibaba.nacos.config.server.model.ConfigInfo;
 import com.alibaba.nacos.config.server.model.ConfigInfo4Beta;
 import com.alibaba.nacos.config.server.model.ConfigInfo4Tag;
-import com.alibaba.nacos.config.server.model.ConfigInfoAggr;
 import com.alibaba.nacos.config.server.model.ConfigInfoBase;
 import com.alibaba.nacos.config.server.model.ConfigInfoBetaWrapper;
 import com.alibaba.nacos.config.server.model.ConfigInfoChanged;
+import com.alibaba.nacos.config.server.model.ConfigInfoGrayWrapper;
 import com.alibaba.nacos.config.server.model.ConfigInfoStateWrapper;
 import com.alibaba.nacos.config.server.model.ConfigInfoTagWrapper;
 import com.alibaba.nacos.config.server.model.ConfigInfoWrapper;
@@ -55,8 +55,8 @@ class ConfigRowMapperInjectorTest {
     @Test
     void testInit() {
         ConfigRowMapperInjector configRowMapperInjector = new ConfigRowMapperInjector();
-        assertEquals(ConfigRowMapperInjector.CONFIG_INFO_WRAPPER_ROW_MAPPER,
-                RowMapperManager.getRowMapper(ConfigRowMapperInjector.CONFIG_INFO_WRAPPER_ROW_MAPPER.getClass().getCanonicalName()));
+        assertEquals(ConfigRowMapperInjector.CONFIG_INFO_WRAPPER_ROW_MAPPER, RowMapperManager.getRowMapper(
+                ConfigRowMapperInjector.CONFIG_INFO_WRAPPER_ROW_MAPPER.getClass().getCanonicalName()));
     }
     
     @Test
@@ -184,6 +184,7 @@ class ConfigRowMapperInjectorTest {
         preConfig.setGroup("group_id11");
         preConfig.setTenant("tenant_id11111");
         preConfig.setModifyTime(System.currentTimeMillis());
+        preConfig.setCreateTime(System.currentTimeMillis());
         preConfig.setId(1243567898L);
         preConfig.setAppName("app_name11111");
         preConfig.setType("type55555");
@@ -199,7 +200,9 @@ class ConfigRowMapperInjectorTest {
         Mockito.when(resultSet.getString(eq("type"))).thenReturn(preConfig.getType());
         Mockito.when(resultSet.getString(eq("content"))).thenReturn(preConfig.getContent());
         Mockito.when(resultSet.getTimestamp(eq("gmt_modified"))).thenReturn(new Timestamp(preConfig.getModifyTime()));
-        
+        Mockito.when(resultSet.getTimestamp(eq("gmt_create"))).thenReturn(new Timestamp(preConfig.getCreateTime()));
+
+
         Mockito.when(resultSet.getLong(eq("id"))).thenReturn(preConfig.getId());
         Mockito.when(resultSet.getString(eq("md5"))).thenReturn(preConfig.getMd5());
         Mockito.when(resultSet.getString(eq("encrypted_data_key"))).thenReturn(preConfig.getEncryptedDataKey());
@@ -319,26 +322,38 @@ class ConfigRowMapperInjectorTest {
     }
     
     @Test
-    void testConfigInfoAggrRowMapper() throws SQLException {
+    void testConfigInfoGrayRowMapper() throws SQLException {
         
-        ConfigInfoAggr preConfig = new ConfigInfoAggr();
+        ConfigInfoGrayWrapper preConfig = new ConfigInfoGrayWrapper();
         preConfig.setDataId("testDataId");
         preConfig.setGroup("group_id11");
         preConfig.setContent("content1123434t");
-        preConfig.setDatumId("datum4567890");
+        preConfig.setGrayName("grayName");
+        preConfig.setGrayRule("rule12345");
         preConfig.setTenant("tenang34567890");
         preConfig.setAppName("app3456789");
+        preConfig.setEncryptedDataKey("key12345");
+        Timestamp timestamp = Timestamp.valueOf("2024-12-12 12:34:34");
         ResultSetImpl resultSet = Mockito.mock(ResultSetImpl.class);
         Mockito.when(resultSet.getString(eq("data_id"))).thenReturn(preConfig.getDataId());
         Mockito.when(resultSet.getString(eq("group_id"))).thenReturn(preConfig.getGroup());
         Mockito.when(resultSet.getString(eq("tenant_id"))).thenReturn(preConfig.getTenant());
-        Mockito.when(resultSet.getString(eq("datum_id"))).thenReturn(preConfig.getDatumId());
+        Mockito.when(resultSet.getString(eq("gray_name"))).thenReturn(preConfig.getGrayName());
+        Mockito.when(resultSet.getString(eq("app_name"))).thenReturn(preConfig.getAppName());
+        
+        Mockito.when(resultSet.getString(eq("gray_rule"))).thenReturn(preConfig.getGrayRule());
+        Mockito.when(resultSet.getTimestamp(eq("gmt_modified"))).thenReturn(timestamp);
+        
         Mockito.when(resultSet.getString(eq("content"))).thenReturn(preConfig.getContent());
         Mockito.when(resultSet.getString(eq("app"))).thenReturn(preConfig.getAppName());
-        ConfigRowMapperInjector.ConfigInfoAggrRowMapper configInfoWrapperRowMapper = new ConfigRowMapperInjector.ConfigInfoAggrRowMapper();
+        Mockito.when(resultSet.getString(eq("encrypted_data_key"))).thenReturn(preConfig.getEncryptedDataKey());
         
-        ConfigInfoAggr configInfoWrapper = configInfoWrapperRowMapper.mapRow(resultSet, 10);
+        ConfigRowMapperInjector.ConfigInfoGrayWrapperRowMapper configInfoWrapperRowMapper =
+                new ConfigRowMapperInjector.ConfigInfoGrayWrapperRowMapper();
+        
+        ConfigInfoGrayWrapper configInfoWrapper = configInfoWrapperRowMapper.mapRow(resultSet, 10);
         assertEquals(preConfig, configInfoWrapper);
+        assertEquals(timestamp.getTime(), configInfoWrapper.getLastModified());
         
     }
     
@@ -467,6 +482,106 @@ class ConfigRowMapperInjectorTest {
         ConfigKey configInfoWrapper = configInfoWrapperRowMapper.mapRow(resultSet, 10);
         assertEquals(preConfig, configInfoWrapper);
         
+    }
+    
+    @Test
+    void testConfigInfoRowMapperWithDescAndTags() throws SQLException {
+        ConfigRowMapperInjector.ConfigInfoRowMapper mapper = new ConfigRowMapperInjector.ConfigInfoRowMapper();
+        ResultSetImpl resultSet = Mockito.mock(ResultSetImpl.class);
+        
+        Mockito.when(resultSet.getLong(eq("id"))).thenReturn(1L);
+        Mockito.when(resultSet.getString(eq("data_id"))).thenReturn("test.properties");
+        Mockito.when(resultSet.getString(eq("group_id"))).thenReturn("DEFAULT_GROUP");
+        Mockito.when(resultSet.getString(eq("tenant_id"))).thenReturn("public");
+        Mockito.when(resultSet.getString(eq("app_name"))).thenReturn("testApp");
+        Mockito.when(resultSet.getString(eq("content"))).thenReturn("key=value");
+        Mockito.when(resultSet.getString(eq("md5"))).thenReturn("abc123");
+        Mockito.when(resultSet.getString(eq("type"))).thenReturn("properties");
+        Mockito.when(resultSet.getString(eq("encrypted_data_key"))).thenReturn("encKey");
+        Mockito.when(resultSet.getString(eq("c_desc"))).thenReturn("测试配置描述");
+        Mockito.when(resultSet.getString(eq("config_tags"))).thenReturn("tag1,tag2,tag3");
+        
+        ConfigInfo configInfo = mapper.mapRow(resultSet, 1);
+        
+        assertEquals(1L, configInfo.getId());
+        assertEquals("test.properties", configInfo.getDataId());
+        assertEquals("DEFAULT_GROUP", configInfo.getGroup());
+        assertEquals("public", configInfo.getTenant());
+        assertEquals("testApp", configInfo.getAppName());
+        assertEquals("key=value", configInfo.getContent());
+        assertEquals("abc123", configInfo.getMd5());
+        assertEquals("properties", configInfo.getType());
+        assertEquals("encKey", configInfo.getEncryptedDataKey());
+        assertEquals("测试配置描述", configInfo.getDesc());
+        assertEquals("tag1,tag2,tag3", configInfo.getConfigTags());
+    }
+    
+    @Test
+    void testConfigInfoRowMapperWithNullDescAndTags() throws SQLException {
+        ConfigRowMapperInjector.ConfigInfoRowMapper mapper = new ConfigRowMapperInjector.ConfigInfoRowMapper();
+        ResultSetImpl resultSet = Mockito.mock(ResultSetImpl.class);
+        
+        Mockito.when(resultSet.getLong(eq("id"))).thenReturn(1L);
+        Mockito.when(resultSet.getString(eq("data_id"))).thenReturn("test.properties");
+        Mockito.when(resultSet.getString(eq("group_id"))).thenReturn("DEFAULT_GROUP");
+        Mockito.when(resultSet.getString(eq("tenant_id"))).thenReturn("public");
+        Mockito.when(resultSet.getString(eq("app_name"))).thenReturn("testApp");
+        Mockito.when(resultSet.getString(eq("content"))).thenReturn("key=value");
+        Mockito.when(resultSet.getString(eq("md5"))).thenReturn("abc123");
+        Mockito.when(resultSet.getString(eq("type"))).thenReturn("properties");
+        Mockito.when(resultSet.getString(eq("encrypted_data_key"))).thenReturn("encKey");
+        Mockito.when(resultSet.getString(eq("c_desc"))).thenReturn(null);
+        Mockito.when(resultSet.getString(eq("config_tags"))).thenReturn(null);
+        
+        ConfigInfo configInfo = mapper.mapRow(resultSet, 1);
+        
+        assertEquals(1L, configInfo.getId());
+        assertEquals("test.properties", configInfo.getDataId());
+        assertEquals("DEFAULT_GROUP", configInfo.getGroup());
+        assertEquals("public", configInfo.getTenant());
+        assertEquals("testApp", configInfo.getAppName());
+        assertEquals("key=value", configInfo.getContent());
+        assertEquals("abc123", configInfo.getMd5());
+        assertEquals("properties", configInfo.getType());
+        assertEquals("encKey", configInfo.getEncryptedDataKey());
+        assertEquals(null, configInfo.getDesc());
+        assertEquals(null, configInfo.getConfigTags());
+    }
+    
+    @Test
+    void testConfigInfoRowMapperBackwardCompatibility() throws SQLException {
+        ConfigRowMapperInjector.ConfigInfoRowMapper mapper = new ConfigRowMapperInjector.ConfigInfoRowMapper();
+        ResultSetImpl resultSet = Mockito.mock(ResultSetImpl.class);
+        
+        // 模拟旧版本数据库，没有 c_desc 和 config_tags 字段
+        Mockito.when(resultSet.getLong(eq("id"))).thenReturn(1L);
+        Mockito.when(resultSet.getString(eq("data_id"))).thenReturn("test.properties");
+        Mockito.when(resultSet.getString(eq("group_id"))).thenReturn("DEFAULT_GROUP");
+        Mockito.when(resultSet.getString(eq("tenant_id"))).thenReturn("public");
+        Mockito.when(resultSet.getString(eq("app_name"))).thenReturn("testApp");
+        Mockito.when(resultSet.getString(eq("content"))).thenReturn("key=value");
+        Mockito.when(resultSet.getString(eq("md5"))).thenReturn("abc123");
+        Mockito.when(resultSet.getString(eq("type"))).thenReturn("properties");
+        Mockito.when(resultSet.getString(eq("encrypted_data_key"))).thenReturn("encKey");
+        
+        // 模拟字段不存在的情况
+        Mockito.when(resultSet.getString(eq("c_desc"))).thenThrow(new SQLException("Column 'c_desc' not found"));
+        Mockito.when(resultSet.getString(eq("config_tags"))).thenThrow(new SQLException("Column 'config_tags' not found"));
+        
+        ConfigInfo configInfo = mapper.mapRow(resultSet, 1);
+        
+        assertEquals(1L, configInfo.getId());
+        assertEquals("test.properties", configInfo.getDataId());
+        assertEquals("DEFAULT_GROUP", configInfo.getGroup());
+        assertEquals("public", configInfo.getTenant());
+        assertEquals("testApp", configInfo.getAppName());
+        assertEquals("key=value", configInfo.getContent());
+        assertEquals("abc123", configInfo.getMd5());
+        assertEquals("properties", configInfo.getType());
+        assertEquals("encKey", configInfo.getEncryptedDataKey());
+        // 新字段应该为 null，保证向后兼容
+        assertEquals(null, configInfo.getDesc());
+        assertEquals(null, configInfo.getConfigTags());
     }
     
 }
